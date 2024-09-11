@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+async-trait = "0.1.82"
+anyhow = "1.0.87"
+bollard = "0.17.1"
+tokio = { version = "1.40.0", features = ["rt", "rt-multi-thread", "macros"] }
