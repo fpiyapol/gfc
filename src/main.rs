@@ -1,4 +1,7 @@
+use anyhow::Result;
+
 #[tokio::main]
-async fn main() {
-    let _ = gfc::init_docker().await;
+async fn main() -> Result<()> {
+    gfc::init_docker().await?;
+    Ok(())
 }
