@@ -52,4 +52,9 @@ impl DockerClient {
 
         Ok(())
     }
+
+    pub async fn remove_container(&self, name: &str) -> Result<()> {
+        println!("Removing container: {}", name);
+        Ok(self.docker.remove_container(name, None).await?)
+    }
 }

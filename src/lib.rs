@@ -11,6 +11,7 @@ pub async fn init_docker() -> Result<()> {
     let image = "hello-world:latest";
     docker_client.create_image(image).await?;
     let _created_container = docker_client.create_container(name, image).await?;
+    docker_client.remove_container(name).await?;
 
     Ok(())
 }
