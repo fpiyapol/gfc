@@ -1,6 +1,8 @@
-pub mod docker_client;
+pub mod models;
+pub mod repositories;
 
-use crate::docker_client::DockerClient;
+use repositories::container_client::ContainerClient;
+use repositories::docker_client::DockerClient;
 
 use anyhow::Result;
 
