@@ -1,7 +1,7 @@
 use anyhow::Result;
-use bollard::container::{Config, CreateContainerOptions};
+use bollard::container::{Config, CreateContainerOptions, ListContainersOptions};
 use bollard::image::CreateImageOptions;
-use bollard::models::ContainerCreateResponse;
+use bollard::models::{ContainerCreateResponse, ContainerSummary};
 use bollard::Docker;
 use futures_util::stream::TryStreamExt;
 
@@ -39,14 +39,14 @@ impl DockerClient {
 
     pub async fn create_image(&self, image: &str) -> Result<()> {
         println!("Creating image: {}", image);
-        let options = CreateImageOptions {
+        let options = Some(CreateImageOptions {
             from_image: image,
             ..Default::default()
-        };
+        });
 
         let _ = self
             .docker
-            .create_image(Some(options), None, None)
+            .create_image(options, None, None)
             .try_collect::<Vec<_>>()
             .await?;
 
@@ -56,5 +56,17 @@ impl DockerClient {
     pub async fn remove_container(&self, name: &str) -> Result<()> {
         println!("Removing container: {}", name);
         Ok(self.docker.remove_container(name, None).await?)
+    }
+
+    pub async fn list_containers(&self) -> Result<Vec<ContainerSummary>> {
+        println!("Listing containers");
+        let options = Some(ListContainersOptions::<String> {
+            all: true,
+            ..Default::default()
+        });
+
+        let containers = self.docker.list_containers(options).await?;
+
+        Ok(containers)
     }
 }
