@@ -1,6 +1,9 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use bollard::container::{Config, CreateContainerOptions, ListContainersOptions};
+use bollard::container::{
+    Config, CreateContainerOptions, ListContainersOptions, StartContainerOptions,
+    StopContainerOptions,
+};
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use futures_util::stream::TryStreamExt;
@@ -76,5 +79,21 @@ impl ContainerClient for DockerClient {
     async fn remove_container(&self, name: &str) -> Result<()> {
         println!("Removing container: {}", name);
         Ok(self.docker.remove_container(name, None).await?)
+    }
+
+    async fn start_container(&self, name: &str) -> Result<()> {
+        println!("Starting container: {}", name);
+        Ok(self
+            .docker
+            .start_container(name, None::<StartContainerOptions<String>>)
+            .await?)
+    }
+
+    async fn stop_container(&self, name: &str) -> Result<()> {
+        println!("Stopping container: {}", name);
+        let timeout = 30;
+        let options = Some(StopContainerOptions { t: timeout });
+
+        Ok(self.docker.stop_container(name, options).await?)
     }
 }
