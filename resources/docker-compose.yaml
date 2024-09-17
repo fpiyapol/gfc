@@ -1,0 +1,3 @@
+services:
+  for-test:
+    image: hello-world:latest
