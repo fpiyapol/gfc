@@ -8,7 +8,9 @@ use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use futures_util::stream::TryStreamExt;
 
-use crate::models::container_client::{ContainerCreateResponse, ContainerInfo};
+use crate::models::container_client::{
+    ContainerCreateResponse, ContainerInfo, CreateContainerConfig,
+};
 use crate::repositories::container_client::ContainerClient;
 
 pub struct DockerClient {
@@ -25,7 +27,12 @@ impl DockerClient {
 
 #[async_trait]
 impl ContainerClient for DockerClient {
-    async fn create_container(&self, name: &str, image: &str) -> Result<ContainerCreateResponse> {
+    async fn create_container(
+        &self,
+        config: CreateContainerConfig,
+    ) -> Result<ContainerCreateResponse> {
+        let image = config.image;
+        let name = config.name;
         println!("Creating container: {}", name);
         let options = Some(CreateContainerOptions {
             name,
