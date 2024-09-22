@@ -31,19 +31,14 @@ impl ContainerClient for DockerClient {
         &self,
         config: CreateContainerConfig,
     ) -> Result<ContainerCreateResponse> {
-        let image = config.image;
-        let name = config.name;
+        let name = config.name.clone();
         println!("Creating container: {}", name);
         let options = Some(CreateContainerOptions {
             name,
             platform: None,
         });
 
-        let config = Config {
-            image: Some(image),
-            ..Default::default()
-        };
-
+        let config = Config::from(config);
         let created_container = self.docker.create_container(options, config).await?.into();
 
         Ok(created_container)
