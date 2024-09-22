@@ -1,8 +1,10 @@
+use anyhow::Result;
+use std::collections::HashMap;
+use std::fs::File;
+
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
 use crate::models::docker_compose::DockerCompose;
 use crate::repositories::container_client::ContainerClient;
-use anyhow::Result;
-use std::fs::File;
 
 pub fn load_docker_compose(path: &str) -> Result<DockerCompose> {
     let file = File::open(path)?;
@@ -16,13 +18,18 @@ where
 {
     let docker_compose = load_docker_compose(path)?;
     for (name, service) in docker_compose.services {
+        let project_name = "gfc-project".to_string();
+        let service_name = format!("{}-{}", project_name, name);
+        let labels = get_labels(project_name, name.clone());
+
         let ports = service.ports.and_then(get_ports);
+
         let config = CreateContainerConfig {
             command: service.command,
             environment: service.environment,
             image: service.image.unwrap_or_default(),
-            labels: None,
-            name,
+            labels: Some(labels),
+            name: service_name,
             ports,
             volumes: None,
         };
@@ -31,6 +38,15 @@ where
     }
 
     Ok(())
+}
+
+fn get_labels(project_name: String, service_name: String) -> HashMap<String, String> {
+    let mut labels = HashMap::new();
+
+    labels.insert("com.docker.compose.project".to_string(), project_name);
+    labels.insert("com.docker.compose.service".to_string(), service_name);
+
+    labels
 }
 
 fn get_ports(ports: Vec<String>) -> Option<Vec<PortMapping>> {
