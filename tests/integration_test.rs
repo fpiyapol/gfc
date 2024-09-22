@@ -1,9 +1,9 @@
 use anyhow::Result;
 
-use gfc::load_docker_compose;
 use gfc::models::container_client::CreateContainerConfig;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
+use gfc::usecases::docker_compose;
 
 #[test]
 fn create_docker_client() {
@@ -34,10 +34,12 @@ async fn create_and_remove_container() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn load_docker_compose_file() -> Result<()> {
+#[tokio::test]
+async fn docker_compose_up() -> Result<()> {
+    let docker_client = DockerClient::new()?;
     let path = "resources/docker-compose.yaml";
-    let docker_compose = load_docker_compose(path);
-    assert!(docker_compose.is_ok());
+    let up_result = docker_compose::up(docker_client, path).await;
+
+    assert!(up_result.is_ok());
     Ok(())
 }

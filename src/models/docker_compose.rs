@@ -3,15 +3,14 @@ use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
 pub struct DockerCompose {
-    version: Option<String>,
-    services: HashMap<String, Service>,
+    pub services: HashMap<String, Service>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Service {
-    command: Option<Vec<String>>,
-    container_name: Option<String>,
-    environment: Option<Vec<String>>,
-    image: Option<String>,
-    ports: Option<Vec<String>>,
+    pub command: Option<Vec<String>>,
+    pub container_name: Option<String>,
+    pub environment: Option<Vec<String>>,
+    pub image: Option<String>,
+    pub ports: Option<Vec<String>>,
 }
