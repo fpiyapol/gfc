@@ -36,9 +36,13 @@ async fn create_and_remove_container() -> Result<()> {
 
 #[tokio::test]
 async fn docker_compose_up() -> Result<()> {
+    // TODO: add test for checking labels
+    // TODO: remove container -- down
+
     let docker_client = DockerClient::new()?;
     let path = "resources/docker-compose.yaml";
-    let up_result = docker_compose::up(docker_client, path).await;
+    let project_name = "int-test";
+    let up_result = docker_compose::up(docker_client, project_name, path).await;
 
     assert!(up_result.is_ok());
     Ok(())

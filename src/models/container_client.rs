@@ -23,7 +23,7 @@ pub struct CreateContainerConfig {
     pub volumes: Option<Vec<VolumeMapping>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PortMapping {
     pub container_port: String,
     pub host_port: String,
