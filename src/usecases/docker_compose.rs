@@ -1,10 +1,17 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fs::File;
+use thiserror::Error;
 
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
 use crate::models::docker_compose::DockerCompose;
 use crate::repositories::container_client::ContainerClient;
+
+#[derive(Debug, Error, PartialEq)]
+pub enum DockerComposeError {
+    #[error("Invalid port format: {0}")]
+    InvalidPort(String),
+}
 
 pub async fn up<C>(client: C, project_name: &str, path: &str) -> Result<()>
 where
@@ -57,7 +64,7 @@ fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, St
     ])
 }
 
-fn get_ports(ports: Vec<String>) -> Result<Vec<PortMapping>, String> {
+fn get_ports(ports: Vec<String>) -> Result<Vec<PortMapping>, DockerComposeError> {
     ports
         .iter()
         .map(|port| {
@@ -68,7 +75,7 @@ fn get_ports(ports: Vec<String>) -> Result<Vec<PortMapping>, String> {
             let (host_port, container_port) = match port_parts.as_slice() {
                 [port] => (port, port),
                 [host_port, container_port] => (host_port, container_port),
-                _ => return Err(format!("Invalid port format: {}", port)),
+                _ => return Err(DockerComposeError::InvalidPort(port.clone())),
             };
 
             Ok(PortMapping {
