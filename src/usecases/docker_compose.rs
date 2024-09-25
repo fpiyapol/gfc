@@ -23,7 +23,6 @@ where
             labels: Some(labels),
             name: service_name,
             ports,
-            volumes: None,
         };
 
         client.create_container(config).await?;

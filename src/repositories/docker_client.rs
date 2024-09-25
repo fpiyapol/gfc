@@ -1,8 +1,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, StartContainerOptions,
-    StopContainerOptions,
+    Config as BollardContainerConfig, CreateContainerOptions, ListContainersOptions,
+    StartContainerOptions, StopContainerOptions,
 };
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
@@ -38,7 +38,7 @@ impl ContainerClient for DockerClient {
             platform: None,
         });
 
-        let config = Config::from(config);
+        let config = BollardContainerConfig::try_from(config)?;
         let created_container = self.docker.create_container(options, config).await?.into();
 
         Ok(created_container)

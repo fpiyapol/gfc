@@ -1,5 +1,7 @@
+use anyhow::Result;
 use bollard::models::{PortBinding, PortMap};
 use std::collections::HashMap;
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct ContainerCreateResponse {
@@ -20,7 +22,6 @@ pub struct CreateContainerConfig {
     pub labels: Option<HashMap<String, String>>,
     pub name: String,
     pub ports: Option<Vec<PortMapping>>,
-    pub volumes: Option<Vec<VolumeMapping>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,14 +31,10 @@ pub struct PortMapping {
     pub protocol: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct VolumeMapping {
-    pub host_path: String,
-    pub container_path: String,
-    pub read_only: bool,
-}
+#[derive(Debug, Error)]
+pub enum ContainerClientModelError {}
 
-type ExposedPort = HashMap<String, HashMap<(), ()>>;
+type ExposedPorts = HashMap<String, HashMap<(), ()>>;
 
 impl From<bollard::models::ContainerCreateResponse> for ContainerCreateResponse {
     fn from(value: bollard::models::ContainerCreateResponse) -> Self {
@@ -54,48 +51,57 @@ impl From<bollard::models::ContainerSummary> for ContainerInfo {
     }
 }
 
-impl From<CreateContainerConfig> for bollard::container::Config<String> {
-    fn from(value: CreateContainerConfig) -> Self {
-        let (exposed_ports, port_bindings) = match extract_ports(&value) {
-            Some((exposed, bindings)) => (Some(exposed), Some(bindings)),
-            None => (None, None),
-        };
+impl TryFrom<CreateContainerConfig> for bollard::container::Config<String> {
+    type Error = ContainerClientModelError;
+
+    fn try_from(value: CreateContainerConfig) -> Result<Self, Self::Error> {
+        let default_port_mappings = Vec::new();
+        let port_mappings = value.ports.as_ref().unwrap_or(&default_port_mappings);
+        let exposed_ports = get_exposed_ports(port_mappings)?;
+        let port_bindings = get_port_bindings(port_mappings)?;
 
         let host_config = bollard::models::HostConfig {
-            port_bindings,
-            // binds: Some(binds),
+            port_bindings: Some(port_bindings),
             ..Default::default()
         };
 
-        Self {
+        Ok(Self {
             env: value.environment,
             cmd: value.command,
             image: Some(value.image),
             labels: value.labels,
-            exposed_ports,
+            exposed_ports: Some(exposed_ports),
             host_config: Some(host_config),
             ..Default::default()
-        }
+        })
     }
 }
 
-fn extract_ports(config: &CreateContainerConfig) -> Option<(ExposedPort, PortMap)> {
-    config.ports.as_ref().map(|port_mappings| {
-        port_mappings
-            .iter()
-            .map(|port_mapping| {
-                let port_key = format!("{}/{}", port_mapping.container_port, port_mapping.protocol);
-                let exposed_port = (port_key.clone(), HashMap::<(), ()>::new());
-                let port_binding = (
-                    port_key,
-                    Some(vec![PortBinding {
-                        host_port: Some(port_mapping.host_port.clone()),
-                        ..Default::default()
-                    }]),
-                );
+fn get_exposed_ports(
+    port_mappings: &[PortMapping],
+) -> Result<ExposedPorts, ContainerClientModelError> {
+    let mut exposed_ports = HashMap::new();
 
-                (exposed_port, port_binding)
-            })
-            .unzip()
-    })
+    for port_mapping in port_mappings {
+        let port_key = format!("{}/{}", port_mapping.container_port, port_mapping.protocol);
+        exposed_ports.insert(port_key, HashMap::new());
+    }
+
+    Ok(exposed_ports)
+}
+
+fn get_port_bindings(port_mappings: &[PortMapping]) -> Result<PortMap, ContainerClientModelError> {
+    let mut port_bindings = HashMap::new();
+
+    for port_mapping in port_mappings {
+        let port_key = format!("{}/{}", port_mapping.container_port, port_mapping.protocol);
+        let port_binding = Some(vec![PortBinding {
+            host_port: Some(port_mapping.host_port.clone()),
+            ..Default::default()
+        }]);
+
+        port_bindings.insert(port_key, port_binding);
+    }
+
+    Ok(port_bindings)
 }
