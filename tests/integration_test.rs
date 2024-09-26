@@ -36,18 +36,36 @@ async fn create_and_remove_container() -> Result<()> {
 
 #[tokio::test]
 async fn docker_compose_up_and_down() -> Result<()> {
-    // TODO: add test for checking labels
-
     let docker_client = DockerClient::new()?;
     let path = "resources/docker-compose.yaml";
     let project_name = "int-test";
+
     let up_result = docker_compose::up(&docker_client, project_name, path).await;
+    let containers = docker_client.list_containers().await?;
+
+    let actual_number_of_containers = containers.len();
+    let actual_container_names = containers
+        .iter()
+        .flat_map(|con| con.names.clone())
+        .map(|name| name.trim_start_matches('/').to_string())
+        .collect::<Vec<String>>();
+
+    let expected_number_of_containers = 1;
+    let expected_container_names = vec!["int-test-for-test".to_string()];
 
     assert!(up_result.is_ok());
+    assert_eq!(expected_number_of_containers, actual_number_of_containers);
+    assert_eq!(expected_container_names, actual_container_names);
 
     let down_result = docker_compose::down(&docker_client, project_name, path).await;
+    let containers = docker_client.list_containers().await?;
+
+    let actual_number_of_containers = containers.len();
+
+    let expected_number_of_containers = 0;
 
     assert!(down_result.is_ok());
+    assert_eq!(expected_number_of_containers, actual_number_of_containers);
 
     Ok(())
 }
