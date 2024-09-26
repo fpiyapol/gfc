@@ -20,8 +20,11 @@ where
     let docker_compose = load_docker_compose(path)?;
 
     for (service_name, service) in docker_compose.services {
+        let service_name = format!("{}-{}", project_name, service_name);
         let config = create_container_config_from(project_name, &service_name, &service)?;
+
         client.create_container(config).await?;
+        client.start_container(&service_name).await?
     }
 
     Ok(())
@@ -35,6 +38,7 @@ where
 
     for (service_name, _) in docker_compose.services {
         let service_name = format!("{}-{}", project_name, service_name);
+
         client.stop_container(&service_name).await?;
         client.remove_container(&service_name).await?;
     }
@@ -53,8 +57,8 @@ fn create_container_config_from(
     service_name: &str,
     service: &Service,
 ) -> Result<CreateContainerConfig> {
-    let service_name = format!("{}-{}", project_name, service_name);
-    let labels = generate_labels(project_name, &service_name);
+    let labels = generate_labels(project_name, service_name);
+
     let ports = service
         .ports
         .as_ref()
@@ -66,7 +70,7 @@ fn create_container_config_from(
         environment: service.environment.clone(),
         image: service.image.clone().unwrap_or_default(),
         labels: Some(labels),
-        name: service_name,
+        name: service_name.to_string(),
         ports,
     };
 
