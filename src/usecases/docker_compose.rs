@@ -4,7 +4,7 @@ use std::fs::File;
 use thiserror::Error;
 
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
-use crate::models::docker_compose::DockerCompose;
+use crate::models::docker_compose::{DockerCompose, Service};
 use crate::repositories::container_client::ContainerClient;
 
 #[derive(Debug, Error, PartialEq)]
@@ -18,20 +18,9 @@ where
     C: ContainerClient,
 {
     let docker_compose = load_docker_compose(path)?;
-    for (name, service) in docker_compose.services {
-        let service_name = format!("{}-{}", project_name, name);
-        let labels = generate_labels(project_name, &name);
-        let ports = service.ports.map(get_ports).transpose().unwrap();
 
-        let config = CreateContainerConfig {
-            command: service.command,
-            environment: service.environment,
-            image: service.image.unwrap_or_default(),
-            labels: Some(labels),
-            name: service_name,
-            ports,
-        };
-
+    for (service_name, service) in docker_compose.services {
+        let config = create_container_config_from(project_name, &service_name, &service)?;
         client.create_container(config).await?;
     }
 
@@ -51,6 +40,31 @@ fn load_docker_compose(path: &str) -> Result<DockerCompose> {
     Ok(compose)
 }
 
+fn create_container_config_from(
+    project_name: &str,
+    service_name: &str,
+    service: &Service,
+) -> Result<CreateContainerConfig> {
+    let service_name = format!("{}-{}", project_name, service_name);
+    let labels = generate_labels(project_name, &service_name);
+    let ports = service
+        .ports
+        .as_ref()
+        .map(extract_port_mappings)
+        .transpose()?;
+
+    let config = CreateContainerConfig {
+        command: service.command.clone(),
+        environment: service.environment.clone(),
+        image: service.image.clone().unwrap_or_default(),
+        labels: Some(labels),
+        name: service_name,
+        ports,
+    };
+
+    Ok(config)
+}
+
 fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, String> {
     HashMap::from([
         (
@@ -64,7 +78,8 @@ fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, St
     ])
 }
 
-fn get_ports(ports: Vec<String>) -> Result<Vec<PortMapping>, DockerComposeError> {
+fn extract_port_mappings(ports: &Vec<String>) -> Result<Vec<PortMapping>, DockerComposeError> {
+    // TODO: Support port mapping with the host IP
     ports
         .iter()
         .map(|port| {
@@ -92,9 +107,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_ports_given_valid_input_then_return_correct_mappings() {
+    fn extract_port_mappings_given_valid_input_then_return_correct_mappings() {
         let input = vec!["8080:80/tcp".to_string(), "443:443/udp".to_string()];
-        let result = get_ports(input).unwrap();
+        let result = extract_port_mappings(&input).unwrap();
 
         let expected = vec![
             PortMapping {
@@ -113,9 +128,9 @@ mod tests {
     }
 
     #[test]
-    fn get_ports_given_valid_ports_without_protocol_then_use_default_tcp() {
+    fn extract_port_mappings_given_valid_ports_without_protocol_then_use_default_tcp() {
         let input = vec!["8080:80".to_string(), "3000:3000".to_string()];
-        let result = get_ports(input).unwrap();
+        let result = extract_port_mappings(&input).unwrap();
 
         let expected = vec![
             PortMapping {
@@ -134,17 +149,17 @@ mod tests {
     }
 
     #[test]
-    fn get_ports_given_empty_input_then_return_empty_list() {
+    fn extract_port_mappings_given_empty_input_then_return_empty_list() {
         let input: Vec<String> = vec![];
-        let result = get_ports(input).unwrap();
+        let result = extract_port_mappings(&input).unwrap();
         let expected: Vec<PortMapping> = vec![];
         assert_eq!(expected, result);
     }
 
     #[test]
-    fn get_ports_given_single_port_then_use_as_both_host_and_container() {
+    fn extract_port_mappings_given_single_port_then_use_as_both_host_and_container() {
         let input = vec!["80/tcp".to_string()];
-        let result = get_ports(input).unwrap();
+        let result = extract_port_mappings(&input).unwrap();
 
         let expected = vec![PortMapping {
             host_port: "80".to_string(),
