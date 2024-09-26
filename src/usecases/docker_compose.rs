@@ -13,7 +13,7 @@ pub enum DockerComposeError {
     InvalidPort(String),
 }
 
-pub async fn up<C>(client: C, project_name: &str, path: &str) -> Result<()>
+pub async fn up<C>(client: &C, project_name: &str, path: &str) -> Result<()>
 where
     C: ContainerClient,
 {
@@ -27,11 +27,19 @@ where
     Ok(())
 }
 
-pub async fn down<C>(client: C, path: &str) -> Result<()>
+pub async fn down<C>(client: &C, project_name: &str, path: &str) -> Result<()>
 where
     C: ContainerClient,
 {
-    todo!()
+    let docker_compose = load_docker_compose(path)?;
+
+    for (service_name, _) in docker_compose.services {
+        let service_name = format!("{}-{}", project_name, service_name);
+        client.stop_container(&service_name).await?;
+        client.remove_container(&service_name).await?;
+    }
+
+    Ok(())
 }
 
 fn load_docker_compose(path: &str) -> Result<DockerCompose> {
