@@ -58,7 +58,7 @@ fn create_container_config_from(
     let ports = service
         .ports
         .as_ref()
-        .map(extract_port_mappings)
+        .map(|ports| extract_port_mappings(ports))
         .transpose()?;
 
     let config = CreateContainerConfig {
@@ -86,7 +86,7 @@ fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, St
     ])
 }
 
-fn extract_port_mappings(ports: &Vec<String>) -> Result<Vec<PortMapping>, DockerComposeError> {
+fn extract_port_mappings(ports: &[String]) -> Result<Vec<PortMapping>, DockerComposeError> {
     // TODO: Support port mapping with the host IP
     ports
         .iter()
