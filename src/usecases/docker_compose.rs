@@ -75,13 +75,8 @@ fn create_container_config_from(
     service_name: &str,
     service: &Service,
 ) -> Result<CreateContainerConfig> {
-    let labels = generate_labels(path, project_name, service_name);
-
-    let ports = service
-        .ports
-        .as_ref()
-        .map(|ports| extract_port_mappings(ports))
-        .transpose()?;
+    let labels = prepare_labels(path, project_name, service_name);
+    let ports = prepare_ports(service)?;
 
     let config = CreateContainerConfig {
         command: service.command.clone(),
@@ -95,7 +90,7 @@ fn create_container_config_from(
     Ok(config)
 }
 
-fn generate_labels(path: &str, project_name: &str, service_name: &str) -> HashMap<String, String> {
+fn prepare_labels(path: &str, project_name: &str, service_name: &str) -> HashMap<String, String> {
     HashMap::from([
         (
             "com.docker.compose.project".to_string(),
@@ -114,6 +109,14 @@ fn generate_labels(path: &str, project_name: &str, service_name: &str) -> HashMa
             get_working_dir(path).to_string(),
         ),
     ])
+}
+
+fn prepare_ports(service: &Service) -> Result<Option<Vec<PortMapping>>, DockerComposeError> {
+    service
+        .ports
+        .as_ref()
+        .map(|ports| extract_port_mappings(ports))
+        .transpose()
 }
 
 fn extract_port_mappings(ports: &[String]) -> Result<Vec<PortMapping>, DockerComposeError> {
