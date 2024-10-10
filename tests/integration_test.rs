@@ -41,7 +41,6 @@ async fn docker_compose_up_and_down() -> Result<()> {
     let project_name = "int-test".to_string();
     let docker_compose = DockerCompose::new(docker_client.clone(), project_name, path);
 
-    // let docker_compose_svc = D
     let up_result = docker_compose.up().await;
     let containers = docker_client.list_containers().await?;
 
