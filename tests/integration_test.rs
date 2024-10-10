@@ -44,14 +44,20 @@ async fn docker_compose_up_and_down() -> Result<()> {
     let containers = docker_client.list_containers().await?;
 
     let actual_number_of_containers = containers.len();
-    let actual_container_names = containers
+    let mut actual_container_names = containers
         .iter()
         .flat_map(|con| con.names.clone())
         .map(|name| name.trim_start_matches('/').to_string())
         .collect::<Vec<String>>();
 
-    let expected_number_of_containers = 1;
-    let expected_container_names = vec!["int-test-for-test".to_string()];
+    let expected_number_of_containers = 2;
+    let mut expected_container_names = vec![
+        "int-test-for-test-a".to_string(),
+        "int-test-for-test-b".to_string(),
+    ];
+
+    actual_container_names.sort();
+    expected_container_names.sort();
 
     assert!(up_result.is_ok());
     assert_eq!(expected_number_of_containers, actual_number_of_containers);
