@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
 use crate::models::docker_compose::{DockerComposeFile, Service};
 use crate::repositories::container_client::ContainerClient;
+use crate::repositories::docker_client::DockerClient;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum DockerComposeError {
@@ -13,17 +14,14 @@ pub enum DockerComposeError {
     InvalidPort(String),
 }
 
-pub struct DockerCompose<C> {
-    client: C,
+pub struct DockerCompose {
+    client: DockerClient,
     path: String,
     project_name: String,
 }
 
-impl<C> DockerCompose<C>
-where
-    C: ContainerClient,
-{
-    pub fn new(client: C, project_name: String, path: String) -> Self {
+impl DockerCompose {
+    pub fn new(client: DockerClient, project_name: String, path: String) -> Self {
         Self {
             client,
             project_name,
