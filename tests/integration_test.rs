@@ -3,7 +3,7 @@ use anyhow::Result;
 use gfc::models::container_client::CreateContainerConfig;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
-use gfc::usecases::docker_compose;
+use gfc::usecases::docker_compose::DockerCompose;
 
 #[test]
 fn create_docker_client() {
@@ -40,7 +40,7 @@ async fn docker_compose_up_and_down() -> Result<()> {
     let path = "resources/docker-compose.yaml";
     let project_name = "int-test";
 
-    let up_result = docker_compose::up(&docker_client, project_name, path).await;
+    let up_result = DockerCompose::up(&docker_client, project_name, path).await;
     let containers = docker_client.list_containers().await?;
 
     let actual_number_of_containers = containers.len();
@@ -63,7 +63,7 @@ async fn docker_compose_up_and_down() -> Result<()> {
     assert_eq!(expected_number_of_containers, actual_number_of_containers);
     assert_eq!(expected_container_names, actual_container_names);
 
-    let down_result = docker_compose::down(&docker_client, project_name, path).await;
+    let down_result = DockerCompose::down(&docker_client, project_name, path).await;
     let containers = docker_client.list_containers().await?;
 
     let actual_number_of_containers = containers.len();

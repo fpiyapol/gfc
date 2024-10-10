@@ -12,39 +12,42 @@ pub enum DockerComposeError {
     #[error("Invalid port format: {0}")]
     InvalidPort(String),
 }
-pub struct DockerComposeService {}
 
-pub async fn up<C>(client: &C, project_name: &str, path: &str) -> Result<()>
-where
-    C: ContainerClient,
-{
-    let docker_compose = load_docker_compose(path)?;
+pub struct DockerCompose {}
 
-    for (service_name, service) in docker_compose.services {
-        let service_name = format!("{}-{}", project_name, service_name);
-        let config = create_container_config_from(project_name, &service_name, &service)?;
+impl DockerCompose {
+    pub async fn up<C>(client: &C, project_name: &str, path: &str) -> Result<()>
+    where
+        C: ContainerClient,
+    {
+        let docker_compose = load_docker_compose(path)?;
 
-        client.create_container(config).await?;
-        client.start_container(&service_name).await?
+        for (service_name, service) in docker_compose.services {
+            let service_name = format!("{}-{}", project_name, service_name);
+            let config = create_container_config_from(project_name, &service_name, &service)?;
+
+            client.create_container(config).await?;
+            client.start_container(&service_name).await?
+        }
+
+        Ok(())
     }
 
-    Ok(())
-}
+    pub async fn down<C>(client: &C, project_name: &str, path: &str) -> Result<()>
+    where
+        C: ContainerClient,
+    {
+        let docker_compose = load_docker_compose(path)?;
 
-pub async fn down<C>(client: &C, project_name: &str, path: &str) -> Result<()>
-where
-    C: ContainerClient,
-{
-    let docker_compose = load_docker_compose(path)?;
+        for (service_name, _) in docker_compose.services {
+            let service_name = format!("{}-{}", project_name, service_name);
 
-    for (service_name, _) in docker_compose.services {
-        let service_name = format!("{}-{}", project_name, service_name);
+            client.stop_container(&service_name).await?;
+            client.remove_container(&service_name).await?;
+        }
 
-        client.stop_container(&service_name).await?;
-        client.remove_container(&service_name).await?;
+        Ok(())
     }
-
-    Ok(())
 }
 
 fn load_docker_compose(path: &str) -> Result<DockerComposeFile> {
