@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::fs::File;
+use std::path::Path;
 use thiserror::Error;
 
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
@@ -34,7 +35,12 @@ impl DockerCompose {
 
         for (service_name, service) in docker_compose.services {
             let service_name = format!("{}-{}", &self.project_name, service_name);
-            let config = create_container_config_from(&self.project_name, &service_name, &service)?;
+            let config = create_container_config_from(
+                &self.path,
+                &self.project_name,
+                &service_name,
+                &service,
+            )?;
 
             self.client.create_container(config).await?;
             self.client.start_container(&service_name).await?
@@ -64,11 +70,12 @@ fn load_docker_compose(path: &str) -> Result<DockerComposeFile> {
 }
 
 fn create_container_config_from(
+    path: &str,
     project_name: &str,
     service_name: &str,
     service: &Service,
 ) -> Result<CreateContainerConfig> {
-    let labels = generate_labels(project_name, service_name);
+    let labels = generate_labels(path, project_name, service_name);
 
     let ports = service
         .ports
@@ -88,7 +95,7 @@ fn create_container_config_from(
     Ok(config)
 }
 
-fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, String> {
+fn generate_labels(path: &str, project_name: &str, service_name: &str) -> HashMap<String, String> {
     HashMap::from([
         (
             "com.docker.compose.project".to_string(),
@@ -97,6 +104,14 @@ fn generate_labels(project_name: &str, service_name: &str) -> HashMap<String, St
         (
             "com.docker.compose.service".to_string(),
             service_name.to_string(),
+        ),
+        (
+            "com.docker.compose.project.config_files".to_string(),
+            path.to_string(),
+        ),
+        (
+            "com.docker.compose.project.working_dir".to_string(),
+            get_working_dir(path).to_string(),
         ),
     ])
 }
@@ -123,6 +138,10 @@ fn extract_port_mappings(ports: &[String]) -> Result<Vec<PortMapping>, DockerCom
             })
         })
         .collect()
+}
+
+fn get_working_dir(path: &str) -> &str {
+    Path::new(path).parent().unwrap().to_str().unwrap()
 }
 
 #[cfg(test)]
