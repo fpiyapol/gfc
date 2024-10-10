@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]
-pub struct DockerCompose {
+pub struct DockerComposeFile {
     pub services: HashMap<String, Service>,
 }
 

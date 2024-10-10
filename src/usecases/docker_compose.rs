@@ -4,7 +4,7 @@ use std::fs::File;
 use thiserror::Error;
 
 use crate::models::container_client::{CreateContainerConfig, PortMapping};
-use crate::models::docker_compose::{DockerCompose, Service};
+use crate::models::docker_compose::{DockerComposeFile, Service};
 use crate::repositories::container_client::ContainerClient;
 
 #[derive(Debug, Error, PartialEq)]
@@ -12,6 +12,7 @@ pub enum DockerComposeError {
     #[error("Invalid port format: {0}")]
     InvalidPort(String),
 }
+pub struct DockerComposeService {}
 
 pub async fn up<C>(client: &C, project_name: &str, path: &str) -> Result<()>
 where
@@ -46,9 +47,9 @@ where
     Ok(())
 }
 
-fn load_docker_compose(path: &str) -> Result<DockerCompose> {
+fn load_docker_compose(path: &str) -> Result<DockerComposeFile> {
     let file = File::open(path)?;
-    let compose: DockerCompose = serde_yaml::from_reader(file)?;
+    let compose: DockerComposeFile = serde_yaml::from_reader(file)?;
     Ok(compose)
 }
 
