@@ -13,37 +13,46 @@ pub enum DockerComposeError {
     InvalidPort(String),
 }
 
-pub struct DockerCompose {}
+pub struct DockerCompose<C> {
+    client: C,
+    path: String,
+    project_name: String,
+}
 
-impl DockerCompose {
-    pub async fn up<C>(client: &C, project_name: &str, path: &str) -> Result<()>
-    where
-        C: ContainerClient,
-    {
-        let docker_compose = load_docker_compose(path)?;
+impl<C> DockerCompose<C>
+where
+    C: ContainerClient,
+{
+    pub fn new(client: C, project_name: String, path: String) -> Self {
+        Self {
+            client,
+            project_name,
+            path,
+        }
+    }
+
+    pub async fn up(&self) -> Result<()> {
+        let docker_compose = load_docker_compose(&self.path)?;
 
         for (service_name, service) in docker_compose.services {
-            let service_name = format!("{}-{}", project_name, service_name);
-            let config = create_container_config_from(project_name, &service_name, &service)?;
+            let service_name = format!("{}-{}", &self.project_name, service_name);
+            let config = create_container_config_from(&self.project_name, &service_name, &service)?;
 
-            client.create_container(config).await?;
-            client.start_container(&service_name).await?
+            self.client.create_container(config).await?;
+            self.client.start_container(&service_name).await?
         }
 
         Ok(())
     }
 
-    pub async fn down<C>(client: &C, project_name: &str, path: &str) -> Result<()>
-    where
-        C: ContainerClient,
-    {
-        let docker_compose = load_docker_compose(path)?;
+    pub async fn down(&self) -> Result<()> {
+        let docker_compose = load_docker_compose(&self.path)?;
 
         for (service_name, _) in docker_compose.services {
-            let service_name = format!("{}-{}", project_name, service_name);
+            let service_name = format!("{}-{}", &self.project_name, service_name);
 
-            client.stop_container(&service_name).await?;
-            client.remove_container(&service_name).await?;
+            self.client.stop_container(&service_name).await?;
+            self.client.remove_container(&service_name).await?;
         }
 
         Ok(())

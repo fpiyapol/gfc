@@ -13,6 +13,7 @@ use crate::models::container_client::{
 };
 use crate::repositories::container_client::ContainerClient;
 
+#[derive(Debug, Clone)]
 pub struct DockerClient {
     docker: Docker,
 }

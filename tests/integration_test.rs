@@ -37,10 +37,12 @@ async fn create_and_remove_container() -> Result<()> {
 #[tokio::test]
 async fn docker_compose_up_and_down() -> Result<()> {
     let docker_client = DockerClient::new()?;
-    let path = "resources/docker-compose.yaml";
-    let project_name = "int-test";
+    let path = "resources/docker-compose.yaml".to_string();
+    let project_name = "int-test".to_string();
+    let docker_compose = DockerCompose::new(docker_client.clone(), project_name, path);
 
-    let up_result = DockerCompose::up(&docker_client, project_name, path).await;
+    // let docker_compose_svc = D
+    let up_result = docker_compose.up().await;
     let containers = docker_client.list_containers().await?;
 
     let actual_number_of_containers = containers.len();
@@ -63,7 +65,7 @@ async fn docker_compose_up_and_down() -> Result<()> {
     assert_eq!(expected_number_of_containers, actual_number_of_containers);
     assert_eq!(expected_container_names, actual_container_names);
 
-    let down_result = DockerCompose::down(&docker_client, project_name, path).await;
+    let down_result = docker_compose.down().await;
     let containers = docker_client.list_containers().await?;
 
     let actual_number_of_containers = containers.len();
