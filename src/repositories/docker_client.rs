@@ -1,16 +1,19 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use bollard::container::{
-    Config, CreateContainerOptions, ListContainersOptions, StartContainerOptions,
-    StopContainerOptions,
+    Config as BollardContainerConfig, CreateContainerOptions, ListContainersOptions,
+    StartContainerOptions, StopContainerOptions,
 };
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use futures_util::stream::TryStreamExt;
 
-use crate::models::container_client::{ContainerCreateResponse, ContainerInfo};
+use crate::models::container_client::{
+    ContainerCreateResponse, ContainerInfo, CreateContainerConfig,
+};
 use crate::repositories::container_client::ContainerClient;
 
+#[derive(Debug, Clone)]
 pub struct DockerClient {
     docker: Docker,
 }
@@ -25,18 +28,18 @@ impl DockerClient {
 
 #[async_trait]
 impl ContainerClient for DockerClient {
-    async fn create_container(&self, name: &str, image: &str) -> Result<ContainerCreateResponse> {
+    async fn create_container(
+        &self,
+        config: CreateContainerConfig,
+    ) -> Result<ContainerCreateResponse> {
+        let name = config.name.clone();
         println!("Creating container: {}", name);
         let options = Some(CreateContainerOptions {
             name,
             platform: None,
         });
 
-        let config = Config {
-            image: Some(image),
-            ..Default::default()
-        };
-
+        let config = BollardContainerConfig::try_from(config)?;
         let created_container = self.docker.create_container(options, config).await?.into();
 
         Ok(created_container)

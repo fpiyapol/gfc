@@ -1,0 +1,6 @@
+services:
+  for-test-a:
+    image: hello-world:latest
+
+  for-test-b:
+    image: hello-world:latest
