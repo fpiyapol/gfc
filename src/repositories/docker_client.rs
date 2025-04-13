@@ -11,6 +11,7 @@ use futures_util::stream::TryStreamExt;
 use crate::models::container_client::{ContainerCreateResponse, ContainerInfo};
 use crate::repositories::container_client::ContainerClient;
 
+#[derive(Debug, Clone)]
 pub struct DockerClient {
     docker: Docker,
 }
@@ -36,7 +37,6 @@ impl ContainerClient for DockerClient {
             image: Some(image),
             ..Default::default()
         };
-
         let created_container = self.docker.create_container(options, config).await?.into();
 
         Ok(created_container)
