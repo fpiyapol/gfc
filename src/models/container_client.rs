@@ -9,6 +9,29 @@ pub struct ContainerInfo {
     pub names: Vec<String>,
 }
 
+#[derive(Debug)]
+pub struct ContainerEvent {
+    pub container_id: String,
+    pub container_name: String,
+    pub action: ContainerEventAction,
+}
+
+#[derive(Debug)]
+pub enum ContainerEventAction {
+    Create,
+    Destroy,
+    Die,
+    HealthStatus,
+    Kill,
+    Oom,
+    Pause,
+    Restart,
+    Start,
+    Stop,
+    Unpause,
+    Update,
+}
+
 impl From<bollard::models::ContainerCreateResponse> for ContainerCreateResponse {
     fn from(value: bollard::models::ContainerCreateResponse) -> Self {
         ContainerCreateResponse { id: value.id }

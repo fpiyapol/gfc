@@ -7,6 +7,7 @@ use bollard::container::{
 use bollard::image::CreateImageOptions;
 use bollard::Docker;
 use futures_util::stream::TryStreamExt;
+use futures_util::Stream;
 
 use crate::models::container_client::{ContainerCreateResponse, ContainerInfo};
 use crate::repositories::container_client::ContainerClient;
@@ -95,5 +96,12 @@ impl ContainerClient for DockerClient {
         let options = Some(StopContainerOptions { t: timeout });
 
         Ok(self.docker.stop_container(name, options).await?)
+    }
+
+    fn watch_events(
+        &self,
+    ) -> impl Stream<Item = Result<bollard::models::EventMessage, bollard::errors::Error>> {
+        let options: Option<bollard::system::EventsOptions<String>> = None;
+        self.docker.events(options)
     }
 }

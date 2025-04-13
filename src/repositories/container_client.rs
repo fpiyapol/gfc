@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use futures_util::Stream;
 
 use crate::models::container_client::{ContainerCreateResponse, ContainerInfo};
 
@@ -11,4 +12,7 @@ pub trait ContainerClient {
     async fn remove_container(&self, name: &str) -> Result<()>;
     async fn start_container(&self, name: &str) -> Result<()>;
     async fn stop_container(&self, name: &str) -> Result<()>;
+    fn watch_events(
+        &self,
+    ) -> impl Stream<Item = Result<bollard::models::EventMessage, bollard::errors::Error>>;
 }
