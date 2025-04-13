@@ -1,32 +1,32 @@
 use serde::Deserialize;
 
-#[derive(PartialEq, Eq, Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct ServiceStatus {
     pub name: String,
     pub state: ServiceState,
 }
 
-#[derive(PartialEq, Eq, Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub enum ServiceState {
-    Paused,
-    Restarting,
-    Removing,
-    Running,
-    Dead,
     Created,
+    Dead,
     Exited,
+    Paused,
+    Removing,
+    Restarting,
+    Running,
 }
 
 impl ServiceState {
     pub fn to_string(&self) -> &str {
         match self {
-            ServiceState::Paused => "paused",
-            ServiceState::Restarting => "restarting",
-            ServiceState::Removing => "removing",
-            ServiceState::Running => "running",
-            ServiceState::Dead => "dead",
             ServiceState::Created => "created",
+            ServiceState::Dead => "dead",
             ServiceState::Exited => "exited",
+            ServiceState::Paused => "paused",
+            ServiceState::Removing => "removing",
+            ServiceState::Restarting => "restarting",
+            ServiceState::Running => "running",
         }
     }
 }

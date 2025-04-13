@@ -27,16 +27,19 @@ impl DockerComposeClient {
     }
 
     pub fn up(&self, path: &str) -> Result<()> {
+        println!("Running docker compose up");
         Self::run_cmd(&["compose", "up", "-d"], path)?;
         Ok(())
     }
 
     pub fn down(&self, path: &str) -> Result<()> {
+        println!("Running docker compose down");
         Self::run_cmd(&["compose", "down"], path)?;
         Ok(())
     }
 
     pub fn ps(&self, path: &str) -> Result<Vec<ServiceStatus>> {
+        println!("Running docker compose ps");
         let output = Self::run_cmd(&["compose", "ps", "--format", "json"], path)?;
 
         let status = output
