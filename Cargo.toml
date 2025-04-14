@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.87"
 async-trait = "0.1.82"
+axum = "0.8.3"
 bollard = "0.17.1"
 futures-util = "0.3.30"
 serde = "1.0.210"
