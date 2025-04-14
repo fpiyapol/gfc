@@ -1,7 +1,9 @@
-use crate::models::docker_compose::{ServiceState, ServiceStatus};
 use anyhow::{anyhow, Result};
 use std::process::Command;
 
+use crate::models::docker_compose::{ServiceState, ServiceStatus};
+
+#[derive(Debug, Clone)]
 pub struct DockerComposeClient;
 
 impl DockerComposeClient {
@@ -38,9 +40,9 @@ impl DockerComposeClient {
         Ok(())
     }
 
-    pub fn ps(&self, path: &str) -> Result<Vec<ServiceStatus>> {
+    pub fn list_containers(&self, path: &str) -> Result<Vec<ServiceStatus>> {
         println!("Running docker compose ps");
-        let output = Self::run_cmd(&["compose", "ps", "--format", "json"], path)?;
+        let output = Self::run_cmd(&["compose", "ps", "--all", "--format", "json"], path)?;
 
         let status = output
             .lines()

@@ -1,4 +1,11 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize)]
+pub struct ComposeProject {
+    pub name: String,
+    pub path: String,
+    pub status: String,
+}
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct ServiceStatus {

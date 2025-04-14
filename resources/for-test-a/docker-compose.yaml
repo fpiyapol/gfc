@@ -1,6 +1,6 @@
 services:
-  for-test-a:
+  svc-a:
     image: hello-world:latest
 
-  for-test-b:
+  svc-b:
     image: hello-world:latest

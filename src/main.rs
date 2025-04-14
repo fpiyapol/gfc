@@ -2,5 +2,5 @@ use anyhow::Result;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    Ok(())
+    gfc::start().await
 }
