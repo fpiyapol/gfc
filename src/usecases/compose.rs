@@ -48,16 +48,24 @@ impl ComposeUsecase {
     }
 
     fn get_container_status(&self, project: &Path) -> Result<String> {
+        let project_path_str = project
+            .to_str()
+            .ok_or_else(|| anyhow!("Failed to convert path to string: {}", project.display()))?;
+
         let containers = self
             .docker_compose_client
-            .list_containers(project.to_str().unwrap())?;
+            .list_containers(project_path_str)?;
+
         let total = containers.len();
         let running = containers
             .iter()
             .filter(|c| c.state == ServiceState::Running)
             .count();
 
-        Ok(format!("Running ({}/{})", running, total))
+        Ok(match running {
+            0 => "Exited".to_string(),
+            _ => format!("Running ({}/{})", running, total),
+        })
     }
 }
 
