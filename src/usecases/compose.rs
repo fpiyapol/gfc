@@ -4,19 +4,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::models::docker_compose::ComposeProject;
-use crate::models::docker_compose::ServiceState;
-use crate::repositories::docker_compose_client::DockerComposeClient;
+use crate::models::docker_compose::{ComposeProject, ContainerState};
+use crate::repositories::compose_client::ComposeClient;
 
 #[derive(Debug, Clone)]
-pub struct ComposeUsecase {
-    docker_compose_client: DockerComposeClient,
+pub struct ComposeUsecase<C>
+where
+    C: ComposeClient,
+{
+    pub compose_client: C,
 }
 
-impl ComposeUsecase {
-    pub fn new(docker_compose_client: DockerComposeClient) -> Self {
+impl<C: ComposeClient> ComposeUsecase<C> {
+    pub fn new(compose_client: C) -> Self {
         Self {
-            docker_compose_client,
+            compose_client,
         }
     }
 
@@ -53,13 +55,13 @@ impl ComposeUsecase {
             .ok_or_else(|| anyhow!("Failed to convert path to string: {}", project.display()))?;
 
         let containers = self
-            .docker_compose_client
+            .compose_client
             .list_containers(project_path_str)?;
 
         let total = containers.len();
         let running = containers
             .iter()
-            .filter(|c| c.state == ServiceState::Running)
+            .filter(|c| c.state == ContainerState::Running)
             .count();
 
         Ok(match running {
@@ -81,4 +83,102 @@ pub async fn find_all_compose_projects(path: &Path) -> Result<Vec<PathBuf>> {
     }
 
     Ok(projects)
+}
+
+#[cfg(test)]
+mod tests {
+    use mockall::predicate::*;
+    use std::path::Path;
+
+    use crate::models::docker_compose::{Container, ContainerState};
+    use crate::repositories::docker_compose_client::MockDockerComposeClient;
+    use crate::usecases::compose::ComposeUsecase;
+
+    #[test]
+    fn given_two_running_containers_when_get_container_status_then_return_running_two_out_of_two() {
+        let containers = vec![
+            Container {
+                name: "service1".to_string(),
+                state: ContainerState::Running,
+            },
+            Container {
+                name: "service2".to_string(),
+                state: ContainerState::Running,
+            },
+        ];
+
+        let mut mock_docker_compose_client = MockDockerComposeClient::new();
+
+        mock_docker_compose_client
+            .expect_list_containers()
+            .with(eq("/mock/path/to/project"))
+            .return_once(|_| Ok(containers));
+
+        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+
+        let actual = usecase
+            .get_container_status(Path::new("/mock/path/to/project"))
+            .unwrap();
+
+        let expected = "Running (2/2)";
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn given_one_running_and_one_exited_container_when_get_container_status_then_return_running_one_out_of_two(
+    ) {
+        let containers = vec![
+            Container {
+                name: "service1".to_string(),
+                state: ContainerState::Running,
+            },
+            Container {
+                name: "service2".to_string(),
+                state: ContainerState::Exited,
+            },
+        ];
+
+        let mut mock_docker_compose_client = MockDockerComposeClient::new();
+
+        mock_docker_compose_client
+            .expect_list_containers()
+            .with(eq("/mock/path/to/project"))
+            .return_once(|_| Ok(containers));
+
+        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+
+        let actual = usecase
+            .get_container_status(Path::new("/mock/path/to/project"))
+            .unwrap();
+
+        let expected = "Running (1/2)";
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn given_exited_containers_when_get_container_status_then_return_exited() {
+        let containers = vec![Container {
+            name: "service1".to_string(),
+            state: ContainerState::Exited,
+        }];
+
+        let mut mock_docker_compose_client = MockDockerComposeClient::new();
+
+        mock_docker_compose_client
+            .expect_list_containers()
+            .with(eq("/mock/path/to/project"))
+            .return_once(|_| Ok(containers));
+
+        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+
+        let actual = usecase
+            .get_container_status(Path::new("/mock/path/to/project"))
+            .unwrap();
+
+        let expected = "Exited";
+
+        assert_eq!(expected, actual);
+    }
 }
