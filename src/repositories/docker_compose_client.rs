@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Result};
+use mockall::automock;
+use mockall::predicate::*;
 use std::process::Command;
 
-use crate::models::docker_compose::{ServiceState, ServiceStatus};
+use crate::models::docker_compose::{Container, ContainerState};
+use crate::repositories::compose_client::ComposeClient;
 
 #[derive(Debug, Clone)]
 pub struct DockerComposeClient;
@@ -27,20 +30,23 @@ impl DockerComposeClient {
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
+}
 
-    pub fn up(&self, path: &str) -> Result<()> {
+#[automock]
+impl ComposeClient for DockerComposeClient {
+    fn up(&self, path: &str) -> Result<()> {
         println!("Running docker compose up");
         Self::run_cmd(&["compose", "up", "-d"], path)?;
         Ok(())
     }
 
-    pub fn down(&self, path: &str) -> Result<()> {
+    fn down(&self, path: &str) -> Result<()> {
         println!("Running docker compose down");
         Self::run_cmd(&["compose", "down"], path)?;
         Ok(())
     }
 
-    pub fn list_containers(&self, path: &str) -> Result<Vec<ServiceStatus>> {
+    fn list_containers(&self, path: &str) -> Result<Vec<Container>> {
         println!("Running docker compose ps");
         let output = Self::run_cmd(&["compose", "ps", "--all", "--format", "json"], path)?;
 
@@ -48,16 +54,16 @@ impl DockerComposeClient {
             .lines()
             .filter_map(|line| {
                 let service: serde_json::Value = serde_json::from_str(line).ok()?;
-                Some(ServiceStatus {
+                Some(Container {
                     name: service.get("Name")?.as_str()?.to_string(),
                     state: match service.get("State")?.as_str()?.to_string().as_str() {
-                        "paused" => ServiceState::Paused,
-                        "restarting" => ServiceState::Restarting,
-                        "removing" => ServiceState::Removing,
-                        "running" => ServiceState::Running,
-                        "dead" => ServiceState::Dead,
-                        "created" => ServiceState::Created,
-                        "exited" => ServiceState::Exited,
+                        "paused" => ContainerState::Paused,
+                        "restarting" => ContainerState::Restarting,
+                        "removing" => ContainerState::Removing,
+                        "running" => ContainerState::Running,
+                        "dead" => ContainerState::Dead,
+                        "created" => ContainerState::Created,
+                        "exited" => ContainerState::Exited,
                         _ => return None,
                     },
                 })

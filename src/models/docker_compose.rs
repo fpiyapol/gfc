@@ -8,13 +8,13 @@ pub struct ComposeProject {
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
-pub struct ServiceStatus {
+pub struct Container {
     pub name: String,
-    pub state: ServiceState,
+    pub state: ContainerState,
 }
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
-pub enum ServiceState {
+pub enum ContainerState {
     Created,
     Dead,
     Exited,
@@ -24,16 +24,16 @@ pub enum ServiceState {
     Running,
 }
 
-impl ServiceState {
+impl ContainerState {
     pub fn to_string(&self) -> &str {
         match self {
-            ServiceState::Created => "created",
-            ServiceState::Dead => "dead",
-            ServiceState::Exited => "exited",
-            ServiceState::Paused => "paused",
-            ServiceState::Removing => "removing",
-            ServiceState::Restarting => "restarting",
-            ServiceState::Running => "running",
+            ContainerState::Created => "created",
+            ContainerState::Dead => "dead",
+            ContainerState::Exited => "exited",
+            ContainerState::Paused => "paused",
+            ContainerState::Removing => "removing",
+            ContainerState::Restarting => "restarting",
+            ContainerState::Running => "running",
         }
     }
 }
