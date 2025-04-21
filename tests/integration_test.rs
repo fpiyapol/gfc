@@ -1,6 +1,7 @@
 use anyhow::Result;
 
-use gfc::models::docker_compose::ServiceState;
+use gfc::models::docker_compose::ContainerState;
+use gfc::repositories::compose_client::ComposeClient;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
 use gfc::repositories::docker_compose_client::DockerComposeClient;
@@ -42,7 +43,7 @@ async fn docker_compose_up_and_down() -> Result<()> {
     assert!(status
         .unwrap()
         .iter()
-        .all(|s| s.state == ServiceState::Running));
+        .all(|s| s.state == ContainerState::Running));
 
     let down_result = docker_compose_client.down(&project);
     assert!(down_result.is_ok());
