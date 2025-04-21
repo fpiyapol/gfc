@@ -1,10 +1,8 @@
 use anyhow::{anyhow, Result};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::fs;
+use std::path::{Path, PathBuf};
 
-use crate::models::docker_compose::ContainerState;
+use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::project::Project;
 use crate::repositories::compose_client::ComposeClient;
 
@@ -21,75 +19,77 @@ impl<C: ComposeClient> ProjectUsecase<C> {
         Self { compose_client }
     }
 
-    pub async fn list_compose_projects(&self) -> Result<Vec<Project>> {
-        find_all_compose_projects(Path::new("resources"))
-            .await?
+    pub fn list_projects(&self) -> Result<Vec<Project>> {
+        let root_path = Path::new("resources");
+        let project_paths = find_all_project_paths(root_path)?;
+
+        project_paths
             .into_iter()
-            .map(|project| self.to_compose_project(&project))
+            .map(|path| self.to_project(&path))
             .collect()
     }
 
-    fn to_compose_project(&self, project: &Path) -> Result<Project> {
-        let name = project
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow!("Invalid project name"))?;
+    fn to_project(&self, project_path: &Path) -> Result<Project> {
+        let name = extract_project_name_from(project_path)?;
+        let path = extract_project_path_from(project_path)?;
+        let status = self.container_status_for(project_path)?;
 
-        let path = project
-            .to_str()
-            .ok_or_else(|| anyhow!("Invalid project path"))?;
-
-        let status = self.get_container_status(project)?;
-
-        Ok(Project {
-            name: name.to_string(),
-            path: path.to_string(),
-            status,
-        })
+        Ok(Project { name, path, status })
     }
 
-    fn get_container_status(&self, project: &Path) -> Result<String> {
-        let project_path_str = project
-            .to_str()
-            .ok_or_else(|| anyhow!("Failed to convert path to string: {}", project.display()))?;
+    fn container_status_for(&self, project_path: &Path) -> Result<String> {
+        let path_str = extract_project_path_from(project_path)?;
+        let containers = self.compose_client.list_containers(&path_str)?;
 
-        let containers = self.compose_client.list_containers(project_path_str)?;
-
-        let total = containers.len();
-        let running = containers
-            .iter()
-            .filter(|c| c.state == ContainerState::Running)
-            .count();
-
-        Ok(match running {
-            0 => "Exited".to_string(),
-            _ => format!("Running ({}/{})", running, total),
-        })
+        Ok(build_container_status_string(&containers))
     }
 }
 
-pub async fn find_all_compose_projects(path: &Path) -> Result<Vec<PathBuf>> {
-    let mut projects = Vec::new();
+fn find_all_project_paths(root_path: &Path) -> Result<Vec<PathBuf>> {
+    let mut projects_paths = Vec::new();
 
-    for entry in fs::read_dir(path)? {
+    for entry in fs::read_dir(root_path)? {
         let entry = entry?;
         let path = entry.path();
+
         if path.is_dir() {
-            projects.push(path);
+            projects_paths.push(path);
         }
     }
 
-    Ok(projects)
+    Ok(projects_paths)
+}
+
+fn extract_project_name_from(path: &Path) -> Result<String> {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("Invalid project name"))
+}
+
+fn extract_project_path_from(path: &Path) -> Result<String> {
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| anyhow!("Invalid project path"))
+}
+
+fn build_container_status_string(containers: &[Container]) -> String {
+    let total = containers.len();
+    let running = containers
+        .iter()
+        .filter(|c| c.state == ContainerState::Running)
+        .count();
+
+    match running {
+        0 => "Exited".to_string(),
+        _ => format!("Running ({}/{})", running, total),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use mockall::predicate::*;
-    use std::path::Path;
-
     use crate::models::docker_compose::{Container, ContainerState};
-    use crate::repositories::docker_compose_client::MockDockerComposeClient;
-    use crate::usecases::project::ProjectUsecase;
+    use crate::usecases::project::build_container_status_string;
 
     #[test]
     fn given_two_running_containers_when_get_container_status_then_return_running_two_out_of_two() {
@@ -104,18 +104,7 @@ mod tests {
             },
         ];
 
-        let mut mock_docker_compose_client = MockDockerComposeClient::new();
-
-        mock_docker_compose_client
-            .expect_list_containers()
-            .with(eq("/mock/path/to/project"))
-            .return_once(|_| Ok(containers));
-
-        let usecase = ProjectUsecase::new(mock_docker_compose_client);
-
-        let actual = usecase
-            .get_container_status(Path::new("/mock/path/to/project"))
-            .unwrap();
+        let actual = build_container_status_string(&containers);
 
         let expected = "Running (2/2)";
 
@@ -136,18 +125,7 @@ mod tests {
             },
         ];
 
-        let mut mock_docker_compose_client = MockDockerComposeClient::new();
-
-        mock_docker_compose_client
-            .expect_list_containers()
-            .with(eq("/mock/path/to/project"))
-            .return_once(|_| Ok(containers));
-
-        let usecase = ProjectUsecase::new(mock_docker_compose_client);
-
-        let actual = usecase
-            .get_container_status(Path::new("/mock/path/to/project"))
-            .unwrap();
+        let actual = build_container_status_string(&containers);
 
         let expected = "Running (1/2)";
 
@@ -161,18 +139,7 @@ mod tests {
             state: ContainerState::Exited,
         }];
 
-        let mut mock_docker_compose_client = MockDockerComposeClient::new();
-
-        mock_docker_compose_client
-            .expect_list_containers()
-            .with(eq("/mock/path/to/project"))
-            .return_once(|_| Ok(containers));
-
-        let usecase = ProjectUsecase::new(mock_docker_compose_client);
-
-        let actual = usecase
-            .get_container_status(Path::new("/mock/path/to/project"))
-            .unwrap();
+        let actual = build_container_status_string(&containers);
 
         let expected = "Exited";
 

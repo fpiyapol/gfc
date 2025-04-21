@@ -8,7 +8,7 @@ pub async fn get_projects<C>(State(usecase): State<ProjectUsecase<C>>) -> Json<V
 where
     C: ComposeClient,
 {
-    match usecase.list_compose_projects().await {
+    match usecase.list_projects() {
         Ok(projects) => Json(projects),
         Err(_) => Json(vec![]),
     }
