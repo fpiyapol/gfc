@@ -4,25 +4,24 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::models::docker_compose::{ComposeProject, ContainerState};
+use crate::models::docker_compose::ContainerState;
+use crate::models::project::Project;
 use crate::repositories::compose_client::ComposeClient;
 
 #[derive(Debug, Clone)]
-pub struct ComposeUsecase<C>
+pub struct ProjectUsecase<C>
 where
     C: ComposeClient,
 {
     pub compose_client: C,
 }
 
-impl<C: ComposeClient> ComposeUsecase<C> {
+impl<C: ComposeClient> ProjectUsecase<C> {
     pub fn new(compose_client: C) -> Self {
-        Self {
-            compose_client,
-        }
+        Self { compose_client }
     }
 
-    pub async fn list_compose_projects(&self) -> Result<Vec<ComposeProject>> {
+    pub async fn list_compose_projects(&self) -> Result<Vec<Project>> {
         find_all_compose_projects(Path::new("resources"))
             .await?
             .into_iter()
@@ -30,7 +29,7 @@ impl<C: ComposeClient> ComposeUsecase<C> {
             .collect()
     }
 
-    fn to_compose_project(&self, project: &Path) -> Result<ComposeProject> {
+    fn to_compose_project(&self, project: &Path) -> Result<Project> {
         let name = project
             .file_name()
             .and_then(|n| n.to_str())
@@ -42,7 +41,7 @@ impl<C: ComposeClient> ComposeUsecase<C> {
 
         let status = self.get_container_status(project)?;
 
-        Ok(ComposeProject {
+        Ok(Project {
             name: name.to_string(),
             path: path.to_string(),
             status,
@@ -54,9 +53,7 @@ impl<C: ComposeClient> ComposeUsecase<C> {
             .to_str()
             .ok_or_else(|| anyhow!("Failed to convert path to string: {}", project.display()))?;
 
-        let containers = self
-            .compose_client
-            .list_containers(project_path_str)?;
+        let containers = self.compose_client.list_containers(project_path_str)?;
 
         let total = containers.len();
         let running = containers
@@ -92,7 +89,7 @@ mod tests {
 
     use crate::models::docker_compose::{Container, ContainerState};
     use crate::repositories::docker_compose_client::MockDockerComposeClient;
-    use crate::usecases::compose::ComposeUsecase;
+    use crate::usecases::project::ProjectUsecase;
 
     #[test]
     fn given_two_running_containers_when_get_container_status_then_return_running_two_out_of_two() {
@@ -114,7 +111,7 @@ mod tests {
             .with(eq("/mock/path/to/project"))
             .return_once(|_| Ok(containers));
 
-        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+        let usecase = ProjectUsecase::new(mock_docker_compose_client);
 
         let actual = usecase
             .get_container_status(Path::new("/mock/path/to/project"))
@@ -146,7 +143,7 @@ mod tests {
             .with(eq("/mock/path/to/project"))
             .return_once(|_| Ok(containers));
 
-        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+        let usecase = ProjectUsecase::new(mock_docker_compose_client);
 
         let actual = usecase
             .get_container_status(Path::new("/mock/path/to/project"))
@@ -171,7 +168,7 @@ mod tests {
             .with(eq("/mock/path/to/project"))
             .return_once(|_| Ok(containers));
 
-        let usecase = ComposeUsecase::new(mock_docker_compose_client);
+        let usecase = ProjectUsecase::new(mock_docker_compose_client);
 
         let actual = usecase
             .get_container_status(Path::new("/mock/path/to/project"))

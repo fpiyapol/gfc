@@ -1,11 +1,4 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize)]
-pub struct ComposeProject {
-    pub name: String,
-    pub path: String,
-    pub status: String,
-}
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct Container {
