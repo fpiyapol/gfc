@@ -1,6 +1,7 @@
 use anyhow::Result;
 
-use gfc::models::docker_compose::ServiceState;
+use gfc::models::docker_compose::ContainerState;
+use gfc::repositories::compose_client::ComposeClient;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
 use gfc::repositories::docker_compose_client::DockerComposeClient;
@@ -32,19 +33,19 @@ async fn create_and_remove_container() -> Result<()> {
 #[tokio::test]
 async fn docker_compose_up_and_down() -> Result<()> {
     let docker_compose_client = DockerComposeClient::new()?;
-    let path = "resources";
+    let project = "resources/for-test-a";
 
-    let up_result = docker_compose_client.up(&path);
-    let status = docker_compose_client.ps(&path);
+    let up_result = docker_compose_client.up(&project);
+    let status = docker_compose_client.list_containers(&project);
 
     assert!(up_result.is_ok());
     assert!(status.is_ok());
     assert!(status
         .unwrap()
         .iter()
-        .all(|s| s.state == ServiceState::Running));
+        .all(|s| s.state == ContainerState::Running));
 
-    let down_result = docker_compose_client.down(&path);
+    let down_result = docker_compose_client.down(&project);
     assert!(down_result.is_ok());
 
     Ok(())
