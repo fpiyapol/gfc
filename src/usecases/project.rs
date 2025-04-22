@@ -88,11 +88,18 @@ fn build_container_status_string(containers: &[Container]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::path::Path;
+
     use crate::models::docker_compose::{Container, ContainerState};
-    use crate::usecases::project::build_container_status_string;
+    use crate::usecases::project::{
+        build_container_status_string, extract_project_name_from, extract_project_path_from,
+    };
 
     #[test]
-    fn given_two_running_containers_when_get_container_status_then_return_running_two_out_of_two() {
+    fn given_two_running_containers_when_build_container_status_string_then_return_running_two_out_of_two(
+    ) {
         let containers = vec![
             Container {
                 name: "service1".to_string(),
@@ -112,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn given_one_running_and_one_exited_container_when_get_container_status_then_return_running_one_out_of_two(
+    fn given_one_running_and_one_exited_container_when_build_container_status_string_then_return_running_one_out_of_two(
     ) {
         let containers = vec![
             Container {
@@ -133,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn given_exited_containers_when_get_container_status_then_return_exited() {
+    fn given_exited_containers_when_build_container_status_string_then_return_exited() {
         let containers = vec![Container {
             name: "service1".to_string(),
             state: ContainerState::Exited,
@@ -144,5 +151,47 @@ mod tests {
         let expected = "Exited";
 
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn given_valid_project_path_when_extract_project_name_then_return_project_name() {
+        let path = Path::new("resources/project");
+
+        let actual = extract_project_name_from(path).unwrap();
+
+        let expected = "project".to_string();
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn given_invalid_project_path_when_extract_project_name_then_return_err() {
+        let path = Path::new("");
+
+        let actual = extract_project_name_from(path);
+
+        assert!(actual.is_err());
+    }
+
+    #[test]
+    fn given_valid_project_path_when_extract_project_path_then_return_project_path() {
+        let path = Path::new("/some/valid/path");
+
+        let actual = extract_project_path_from(path).unwrap();
+
+        let expected = "/some/valid/path".to_string();
+
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn given_invalid_project_path_when_extract_project_path_then_return_err() {
+        let bytes = b"/some/\xFFinvalid/path";
+        let os_str = OsStr::from_bytes(bytes);
+        let path = Path::new(os_str);
+
+        let actual = extract_project_path_from(path);
+
+        assert!(actual.is_err());
     }
 }
