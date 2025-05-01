@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::models::docker_compose::{Container, ContainerState};
-use crate::models::project::Project;
+use crate::models::project::{Project, ProjectFile};
 use crate::repositories::compose_client::ComposeClient;
 
 #[derive(Debug, Clone)]
@@ -18,6 +18,28 @@ impl<C: ComposeClient> ProjectUsecase<C> {
     pub fn new(compose_client: C) -> Self {
         Self { compose_client }
     }
+
+    pub fn create_project(&self, project_file: ProjectFile) -> Result<Project> {
+        println!("Creating project: {}", project_file.name);
+        let project_name = &project_file.name;
+        let project_path = Path::new("resources/projects").join(project_name);
+        let project_content = serde_yaml::to_string(&project_file)?;
+
+        fs::create_dir(&project_path)?;
+        fs::write(project_path.join("project.yaml"), project_content)?;
+
+        // TODO: implement git clone
+        // TODO: run docker compose up
+        // TODO: validate project name is unique
+
+        Ok(Project {
+            name: project_name.clone(),
+            path: project_path.to_str().unwrap().to_string(),
+            status: "Not running".to_string(),
+        })
+    }
+
+    // TODO: delete project
 
     pub fn list_projects(&self) -> Result<Vec<Project>> {
         let root_path = Path::new("resources");

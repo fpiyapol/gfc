@@ -4,9 +4,10 @@ pub mod repositories;
 pub mod usecases;
 
 use anyhow::Result;
-use axum::{routing::get, Router};
-use handlers::project::get_projects;
+use axum::routing::{get, post};
+use axum::Router;
 
+use crate::handlers::project::{create_project, get_projects};
 use crate::repositories::docker_compose_client::DockerComposeClient;
 use crate::usecases::project::ProjectUsecase;
 
@@ -16,6 +17,7 @@ pub async fn start() -> Result<()> {
 
     let app = Router::new()
         .route("/projects", get(get_projects))
+        .route("/projects", post(create_project))
         .with_state(project_usecase);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
