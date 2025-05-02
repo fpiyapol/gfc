@@ -1,41 +1,62 @@
 use anyhow::{anyhow, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::project::{Project, ProjectFile};
 use crate::repositories::compose_client::ComposeClient;
+use crate::repositories::git::GitClient;
 
 #[derive(Debug, Clone)]
-pub struct ProjectUsecase<C>
+pub struct ProjectUsecase<C, G>
 where
-    C: ComposeClient,
+    C: ComposeClient + Send + Sync + 'static,
+    G: GitClient + Send + Sync + 'static,
 {
-    pub compose_client: C,
+    pub compose_client: Arc<C>,
+    pub git_client: Arc<G>,
 }
 
-impl<C: ComposeClient> ProjectUsecase<C> {
-    pub fn new(compose_client: C) -> Self {
-        Self { compose_client }
+impl<C, G> ProjectUsecase<C, G>
+where
+    C: ComposeClient + Send + Sync,
+    G: GitClient + Send + Sync,
+{
+    pub fn new(compose_client: Arc<C>, git_client: Arc<G>) -> Self {
+        Self {
+            compose_client,
+            git_client,
+        }
     }
 
     pub fn create_project(&self, project_file: ProjectFile) -> Result<Project> {
         println!("Creating project: {}", project_file.name);
-        let project_name = &project_file.name;
-        let project_path = Path::new("resources/projects").join(project_name);
+
+        let git_client = Arc::clone(&self.git_client);
+        let compose_client = Arc::clone(&self.compose_client);
+
+        let project_name = project_file.name.clone();
+        let project_path = Path::new("resources/projects").join(project_name.clone());
+        let project_file_path = project_path.join("project.yaml");
         let project_content = serde_yaml::to_string(&project_file)?;
+        let working_dir = Path::new("resources/repositories").join(project_name.clone());
 
         fs::create_dir(&project_path)?;
-        fs::write(project_path.join("project.yaml"), project_content)?;
+        fs::write(project_file_path, project_content)?;
+        fs::create_dir(&working_dir)?;
 
-        // TODO: implement git clone
-        // TODO: run docker compose up
-        // TODO: validate project name is unique
+        tokio::task::spawn_blocking(move || {
+            let _ = git_client.clone_repository(&project_file.source, &working_dir);
+            let _ = compose_client.up(working_dir.to_str().unwrap());
+        });
+
+        let status = self.container_status_for(&project_path)?;
 
         Ok(Project {
             name: project_name.clone(),
-            path: project_path.to_str().unwrap().to_string(),
-            status: "Not running".to_string(),
+            path: project_path.display().to_string(),
+            status,
         })
     }
 

@@ -1,14 +1,15 @@
 use axum::{extract::State, Json};
 
-use crate::models::project::{Project, ProjectFile};
+use crate::models::project::{CreateProjectResponse, Project, ProjectFile};
 use crate::repositories::compose_client::ComposeClient;
+use crate::repositories::git::GitClient;
 use crate::usecases::project::ProjectUsecase;
 
 // TODO: implement error handling
-
-pub async fn get_projects<C>(State(usecase): State<ProjectUsecase<C>>) -> Json<Vec<Project>>
+pub async fn get_projects<C, G>(State(usecase): State<ProjectUsecase<C, G>>) -> Json<Vec<Project>>
 where
-    C: ComposeClient,
+    C: ComposeClient + Send + Sync,
+    G: GitClient + Send + Sync,
 {
     match usecase.list_projects() {
         Ok(projects) => Json(projects),
@@ -16,19 +17,21 @@ where
     }
 }
 
-pub async fn create_project<C>(
-    State(usecase): State<ProjectUsecase<C>>,
+// perform async process. so cant return the project but just response with acknowledgment, 200
+pub async fn create_project<C, G>(
+    State(usecase): State<ProjectUsecase<C, G>>,
     Json(project_file): Json<ProjectFile>,
-) -> Json<Project>
+) -> Json<CreateProjectResponse>
 where
-    C: ComposeClient,
+    C: ComposeClient + Send + Sync,
+    G: GitClient + Send + Sync,
 {
     match usecase.create_project(project_file) {
-        Ok(project) => Json(project),
-        Err(_) => Json(Project {
-            name: "".to_string(),
-            path: "".to_string(),
-            status: "".to_string(),
+        Ok(_) => Json(CreateProjectResponse {
+            status: "created".to_string(),
+        }),
+        Err(e) => Json(CreateProjectResponse {
+            status: format!("error: {}", e),
         }),
     }
 }
