@@ -14,8 +14,3 @@ pub struct Project {
     pub path: String,
     pub status: String,
 }
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CreateProjectResponse {
-    pub status: String,
-}

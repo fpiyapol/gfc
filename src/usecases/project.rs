@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::project::{Project, ProjectFile};
+use crate::models::response::{GenericResponse, ResponseStatus};
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 
@@ -30,7 +31,10 @@ where
         }
     }
 
-    pub fn create_project(&self, project_file: ProjectFile) -> Result<Project> {
+    pub fn create_project(
+        &self,
+        project_file: ProjectFile,
+    ) -> Result<GenericResponse<ResponseStatus>> {
         println!("Creating project: {}", project_file.name);
 
         let git_client = Arc::clone(&self.git_client);
@@ -51,25 +55,19 @@ where
             let _ = compose_client.up(working_dir.to_str().unwrap());
         });
 
-        let status = self.container_status_for(&project_path)?;
-
-        Ok(Project {
-            name: project_name.clone(),
-            path: project_path.display().to_string(),
-            status,
-        })
+        Ok(GenericResponse::result(ResponseStatus::Success))
     }
 
-    // TODO: delete project
-
-    pub fn list_projects(&self) -> Result<Vec<Project>> {
+    pub fn list_projects(&self) -> Result<GenericResponse<Project>> {
         let root_path = Path::new("resources");
         let project_paths = find_all_project_paths(root_path)?;
 
-        project_paths
-            .into_iter()
-            .map(|path| self.to_project(&path))
-            .collect()
+        Ok(GenericResponse::results(
+            project_paths
+                .into_iter()
+                .map(|path| self.to_project(&path))
+                .collect::<Result<Vec<Project>>>()?,
+        ))
     }
 
     fn to_project(&self, project_path: &Path) -> Result<Project> {
