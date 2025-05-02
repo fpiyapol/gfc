@@ -13,7 +13,7 @@ use crate::repositories::docker_compose_client::DockerComposeClient;
 use crate::repositories::git::GitClientImpl;
 use crate::usecases::project::ProjectUsecase;
 
-pub async fn start() -> Result<()> {
+pub async fn init() -> Result<()> {
     let docker_compose_client = Arc::new(DockerComposeClient::new()?);
     let git_client = Arc::new(GitClientImpl);
 

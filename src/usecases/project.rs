@@ -80,7 +80,10 @@ where
 
     fn container_status_for(&self, project_path: &Path) -> Result<String> {
         let path_str = extract_project_path_from(project_path)?;
-        let containers = self.compose_client.list_containers(&path_str)?;
+        let containers = self
+            .compose_client
+            .list_containers(&path_str)
+            .map_err(|_| anyhow!("Failed to list containers"))?;
 
         Ok(build_container_status_string(&containers))
     }
