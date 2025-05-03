@@ -1,13 +1,35 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use glob::glob;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use thiserror::Error;
 
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::project::{Project, ProjectFile};
 use crate::models::response::{GenericResponse, ResponseStatus};
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
+
+#[derive(Debug, Error)]
+pub enum ProjectUsecaseError {
+    #[error("Failed to create project: {0}")]
+    CreateProjectFailed(String),
+    #[error("Failed to list projects: {0}")]
+    ListProjectsFailed(String),
+    #[error("Invalid project path")]
+    InvalidProjectPath,
+    #[error("Invalid project name")]
+    InvalidProjectName,
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Yaml(#[from] serde_yaml::Error),
+    // #[error(transparent)]
+    // Glob(#[from] glob::GlobError),
+}
 
 #[derive(Debug, Clone)]
 pub struct ProjectUsecase<C, G>
@@ -34,87 +56,116 @@ where
     pub fn create_project(
         &self,
         project_file: ProjectFile,
-    ) -> Result<GenericResponse<ResponseStatus>> {
+    ) -> Result<GenericResponse<ResponseStatus>, ProjectUsecaseError> {
         println!("Creating project: {}", project_file.name);
 
         let git_client = Arc::clone(&self.git_client);
         let compose_client = Arc::clone(&self.compose_client);
 
-        let project_name = project_file.name.clone();
-        let project_path = Path::new("resources/projects").join(project_name.clone());
-        let project_file_path = project_path.join("project.yaml");
-        let project_content = serde_yaml::to_string(&project_file)?;
-        let working_dir = Path::new("resources/repositories").join(project_name.clone());
+        let (project_path, project_file_path, working_dir) = build_paths(&project_file.name);
 
-        fs::create_dir(&project_path)?;
-        fs::write(project_file_path, project_content)?;
-        fs::create_dir(&working_dir)?;
+        prepare_project_files(
+            &project_file,
+            &project_path,
+            &project_file_path,
+            &working_dir,
+        )?;
+
+        let source = project_file.source.clone();
+        let working_dir = working_dir.clone();
 
         tokio::task::spawn_blocking(move || {
-            let _ = git_client.clone_repository(&project_file.source, &working_dir);
+            let _ = git_client.clone_repository(&source, &working_dir);
             let _ = compose_client.up(working_dir.to_str().unwrap());
         });
 
         Ok(GenericResponse::result(ResponseStatus::Success))
     }
 
-    pub fn list_projects(&self) -> Result<GenericResponse<Project>> {
-        let root_path = Path::new("resources");
-        let project_paths = find_all_project_paths(root_path)?;
+    pub fn list_projects(&self) -> Result<GenericResponse<Project>, ProjectUsecaseError> {
+        let root_project_path = Path::new("resources/projects");
+        let project_files = find_all_project_files(root_project_path)?;
 
-        Ok(GenericResponse::results(
-            project_paths
-                .into_iter()
-                .map(|path| self.to_project(&path))
-                .collect::<Result<Vec<Project>>>()?,
-        ))
+        println!("Project files: {:#?}", project_files);
+
+        let projects = project_files
+            .into_iter()
+            .map(|path| self.to_project(&path))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(GenericResponse::results(projects))
     }
 
-    fn to_project(&self, project_path: &Path) -> Result<Project> {
-        let name = extract_project_name_from(project_path)?;
-        let path = extract_project_path_from(project_path)?;
-        let status = self.container_status_for(project_path)?;
+    fn to_project(&self, project_file: &ProjectFile) -> Result<Project, ProjectUsecaseError> {
+        let name = project_file.name.clone();
+        let source = project_file.source.clone();
+        let status = self.container_status_for(&name)?;
+        let last_updated_at = "".to_string();
 
-        Ok(Project { name, path, status })
+        Ok(Project {
+            name,
+            source,
+            status,
+            last_updated_at,
+        })
     }
 
-    fn container_status_for(&self, project_path: &Path) -> Result<String> {
-        let path_str = extract_project_path_from(project_path)?;
+    fn container_status_for(&self, project_name: &str) -> Result<String, ProjectUsecaseError> {
+        let working_dir = Path::new("resources/repositories").join(project_name);
         let containers = self
             .compose_client
-            .list_containers(&path_str)
-            .map_err(|_| anyhow!("Failed to list containers"))?;
+            .list_containers(working_dir.to_str().unwrap())
+            .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
 
         Ok(build_container_status_string(&containers))
     }
 }
 
-fn find_all_project_paths(root_path: &Path) -> Result<Vec<PathBuf>> {
-    let mut projects_paths = Vec::new();
-
-    for entry in fs::read_dir(root_path)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            projects_paths.push(path);
-        }
-    }
-
-    Ok(projects_paths)
+fn prepare_project_files(
+    project_file: &ProjectFile,
+    project_path: &Path,
+    project_file_path: &Path,
+    working_dir: &Path,
+) -> Result<(), ProjectUsecaseError> {
+    let content = serde_yaml::to_string(project_file)?;
+    fs::create_dir(project_path)?;
+    fs::write(project_file_path, content)?;
+    fs::create_dir(working_dir)?;
+    Ok(())
 }
 
-fn extract_project_name_from(path: &Path) -> Result<String> {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .map(str::to_string)
-        .ok_or_else(|| anyhow!("Invalid project name"))
+fn build_paths(project_name: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let project_path = Path::new("resources/projects").join(project_name);
+    let project_file_path = project_path.join("project.yaml");
+    let working_dir = Path::new("resources/repositories").join(project_name);
+    (project_path, project_file_path, working_dir)
 }
 
-fn extract_project_path_from(path: &Path) -> Result<String> {
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| anyhow!("Invalid project path"))
+fn find_all_project_files(root_path: &Path) -> Result<Vec<ProjectFile>, ProjectUsecaseError> {
+    let patterns = [
+        format!("{}/**/*.yml", root_path.display()),
+        format!("{}/**/*.yaml", root_path.display()),
+    ];
+
+    let files = patterns
+        .iter()
+        .flat_map(|pattern| glob(pattern).into_iter().flatten())
+        .collect::<Result<Vec<PathBuf>, _>>()
+        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+
+    let contents = files
+        .iter()
+        .map(fs::read_to_string)
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+
+    let projects = contents
+        .iter()
+        .map(|content| serde_yaml::from_str(content))
+        .collect::<Result<Vec<ProjectFile>, _>>()
+        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+
+    Ok(projects)
 }
 
 fn build_container_status_string(containers: &[Container]) -> String {
@@ -132,14 +183,8 @@ fn build_container_status_string(containers: &[Container]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-    use std::path::Path;
-
     use crate::models::docker_compose::{Container, ContainerState};
-    use crate::usecases::project::{
-        build_container_status_string, extract_project_name_from, extract_project_path_from,
-    };
+    use crate::usecases::project::build_container_status_string;
 
     #[test]
     fn given_two_running_containers_when_build_container_status_string_then_return_running_two_out_of_two(
@@ -195,47 +240,5 @@ mod tests {
         let expected = "Exited";
 
         assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn given_valid_project_path_when_extract_project_name_then_return_project_name() {
-        let path = Path::new("resources/project");
-
-        let actual = extract_project_name_from(path).unwrap();
-
-        let expected = "project".to_string();
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn given_invalid_project_path_when_extract_project_name_then_return_err() {
-        let path = Path::new("");
-
-        let actual = extract_project_name_from(path);
-
-        assert!(actual.is_err());
-    }
-
-    #[test]
-    fn given_valid_project_path_when_extract_project_path_then_return_project_path() {
-        let path = Path::new("/some/valid/path");
-
-        let actual = extract_project_path_from(path).unwrap();
-
-        let expected = "/some/valid/path".to_string();
-
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn given_invalid_project_path_when_extract_project_path_then_return_err() {
-        let bytes = b"/some/\xFFinvalid/path";
-        let os_str = OsStr::from_bytes(bytes);
-        let path = Path::new(os_str);
-
-        let actual = extract_project_path_from(path);
-
-        assert!(actual.is_err());
     }
 }

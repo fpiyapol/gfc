@@ -11,6 +11,7 @@ pub struct ProjectFile {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Project {
     pub name: String,
-    pub path: String,
+    pub source: GitSource,
     pub status: String,
+    pub last_updated_at: String,
 }

@@ -113,6 +113,13 @@ impl ComposeClient for DockerComposeClient {
 }
 
 fn find_compose_file_name(dir: &Path) -> Result<String, DockerComposeError> {
+    println!("Finding compose file name in {}", dir.display());
+    SUPPORTED_COMPOSE_FILES.iter().for_each(|name| {
+        println!("Checking {}", name);
+        println!("Path: {}", dir.join(name).display());
+        println!("Exists: {}", dir.join(name).exists());
+    });
+
     SUPPORTED_COMPOSE_FILES
         .iter()
         .find(|name| dir.join(name).exists())

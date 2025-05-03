@@ -3,7 +3,7 @@ use anyhow::Result;
 use crate::models::docker_compose::Container;
 
 pub trait ComposeClient {
-    type Error;
+    type Error: std::error::Error;
 
     fn list_containers(&self, path: &str) -> Result<Vec<Container>, Self::Error>;
     fn up(&self, path: &str) -> Result<(), Self::Error>;
