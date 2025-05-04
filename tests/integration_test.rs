@@ -4,7 +4,7 @@ use gfc::models::docker_compose::ContainerState;
 use gfc::repositories::compose_client::ComposeClient;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
-use gfc::repositories::docker_compose_client::DockerComposeClient;
+use gfc::repositories::docker_compose_client::{DockerComposeClient, DockerComposeError};
 
 #[test]
 fn create_docker_client() {
@@ -47,6 +47,27 @@ async fn docker_compose_up_and_down() -> Result<()> {
 
     let down_result = docker_compose_client.down(&project);
     assert!(down_result.is_ok());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn docker_compose_execute_error() -> Result<()> {
+    let docker_compose_client = DockerComposeClient::new()?;
+    let project = "resources/non-exist-project";
+
+    let up_result = docker_compose_client.up(&project);
+    let status = docker_compose_client.list_containers(&project);
+
+    assert!(match up_result {
+        Err(DockerComposeError::DockerComposeFileDoesNotExist) => true,
+        _ => false,
+    });
+
+    assert!(match status {
+        Err(DockerComposeError::DockerComposeFileDoesNotExist) => true,
+        _ => false,
+    });
 
     Ok(())
 }
