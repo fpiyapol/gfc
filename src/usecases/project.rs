@@ -17,18 +17,6 @@ pub enum ProjectUsecaseError {
     CreateProjectFailed(String),
     #[error("Failed to list projects: {0}")]
     ListProjectsFailed(String),
-    #[error("Invalid project path")]
-    InvalidProjectPath,
-    #[error("Invalid project name")]
-    InvalidProjectName,
-
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-
-    #[error(transparent)]
-    Yaml(#[from] serde_yaml::Error),
-    // #[error(transparent)]
-    // Glob(#[from] glob::GlobError),
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +57,8 @@ where
             &project_path,
             &project_file_path,
             &working_dir,
-        )?;
+        )
+        .map_err(|e| ProjectUsecaseError::CreateProjectFailed(e.to_string()))?;
 
         let source = project_file.source.clone();
         let working_dir = working_dir.clone();
@@ -84,23 +73,27 @@ where
 
     pub fn list_projects(&self) -> Result<GenericResponse<Project>, ProjectUsecaseError> {
         let root_project_path = Path::new("resources/projects");
-        let project_files = find_all_project_files(root_project_path)?;
-
-        println!("Project files: {:#?}", project_files);
+        let project_files = find_all_project_files(root_project_path)
+            .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
 
         let projects = project_files
             .into_iter()
-            .map(|path| self.to_project(&path))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|project_file| self.to_project(&project_file))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
 
         Ok(GenericResponse::results(projects))
     }
 
-    fn to_project(&self, project_file: &ProjectFile) -> Result<Project, ProjectUsecaseError> {
+    fn to_project(&self, project_file: &ProjectFile) -> Result<Project> {
         let name = project_file.name.clone();
         let source = project_file.source.clone();
         let status = self.container_status_for(&name)?;
-        let last_updated_at = "".to_string();
+        let working_dir = Path::new("resources/repositories").join(&name);
+        let last_updated_at = self
+            .git_client
+            .get_last_commit_timestamp(&working_dir)?
+            .to_string();
 
         Ok(Project {
             name,
@@ -126,7 +119,7 @@ fn prepare_project_files(
     project_path: &Path,
     project_file_path: &Path,
     working_dir: &Path,
-) -> Result<(), ProjectUsecaseError> {
+) -> Result<()> {
     let content = serde_yaml::to_string(project_file)?;
     fs::create_dir(project_path)?;
     fs::write(project_file_path, content)?;
@@ -141,7 +134,7 @@ fn build_paths(project_name: &str) -> (PathBuf, PathBuf, PathBuf) {
     (project_path, project_file_path, working_dir)
 }
 
-fn find_all_project_files(root_path: &Path) -> Result<Vec<ProjectFile>, ProjectUsecaseError> {
+fn find_all_project_files(root_path: &Path) -> Result<Vec<ProjectFile>> {
     let patterns = [
         format!("{}/**/*.yml", root_path.display()),
         format!("{}/**/*.yaml", root_path.display()),
@@ -150,20 +143,17 @@ fn find_all_project_files(root_path: &Path) -> Result<Vec<ProjectFile>, ProjectU
     let files = patterns
         .iter()
         .flat_map(|pattern| glob(pattern).into_iter().flatten())
-        .collect::<Result<Vec<PathBuf>, _>>()
-        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+        .collect::<Result<Vec<PathBuf>, _>>()?;
 
     let contents = files
         .iter()
         .map(fs::read_to_string)
-        .collect::<Result<Vec<String>, _>>()
-        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+        .collect::<Result<Vec<String>, _>>()?;
 
     let projects = contents
         .iter()
         .map(|content| serde_yaml::from_str(content))
-        .collect::<Result<Vec<ProjectFile>, _>>()
-        .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+        .collect::<Result<Vec<ProjectFile>, _>>()?;
 
     Ok(projects)
 }
