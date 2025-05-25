@@ -1,0 +1,7 @@
+server:
+  host: 0.0.0.0
+  port: 3000
+
+resources:
+  projects_dir: resources/projects # where project files are stored
+  repositories_dir: resources/repositories # where repositories are cloned
