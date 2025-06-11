@@ -1,11 +1,10 @@
 use anyhow::Result;
 
+use crate::errors::compose::ComposeError;
 use crate::models::docker_compose::Container;
 
 pub trait ComposeClient {
-    type Error: std::error::Error;
-
-    fn list_containers(&self, path: &str) -> Result<Vec<Container>, Self::Error>;
-    fn up(&self, path: &str) -> Result<(), Self::Error>;
-    fn down(&self, path: &str) -> Result<(), Self::Error>;
+    fn list_containers(&self, path: &str) -> Result<Vec<Container>, ComposeError>;
+    fn up(&self, path: &str) -> Result<(), ComposeError>;
+    fn down(&self, path: &str) -> Result<(), ComposeError>;
 }
