@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::config::ResourcesConfig;
 use crate::models::docker_compose::{Container, ContainerState};
+use crate::models::git::GitSource;
 use crate::models::project::{Project, ProjectFile};
 use crate::models::response::{GenericResponse, ResponseStatus};
 use crate::repositories::compose_client::ComposeClient;
@@ -68,12 +69,15 @@ where
         )
         .map_err(|e| ProjectUsecaseError::CreateProjectFailed(e.to_string()))?;
 
-        let source = project_file.source.clone();
+        let git_source = project_file.source.clone();
         let repository_dir = repository_dir.clone();
+        let project_name = project_file.name.clone();
+        let compose_file_path = self.get_compose_file_path(&project_name, &git_source)?;
 
         tokio::task::spawn_blocking(move || {
-            let _ = git_client.clone_repository(&source, &repository_dir);
-            let _ = compose_client.up(repository_dir.to_str().unwrap());
+            let _ = git_client.clone_repository(&git_source, &repository_dir);
+            let _ = compose_client.up(&compose_file_path);
+            println!("Project '{}' creation completed successfully", project_name);
         });
 
         Ok(GenericResponse::result(ResponseStatus::Success))
@@ -93,10 +97,32 @@ where
         Ok(GenericResponse::results(projects))
     }
 
+    fn get_compose_file_path(
+        &self,
+        project_name: &str,
+        git_source: &GitSource,
+    ) -> Result<String, ProjectUsecaseError> {
+        let repository_dir = Path::new(&self.resources_config.repositories_dir).join(project_name);
+        let compose_file_path = repository_dir.join(&git_source.path);
+
+        compose_file_path
+            .to_str()
+            .ok_or_else(|| {
+                let error_msg = format!(
+                    "Invalid path to compose file for project '{}': cannot convert path to string",
+                    project_name
+                );
+                println!("Project operation failed: {}", error_msg);
+                ProjectUsecaseError::CreateProjectFailed(error_msg)
+            })
+            .map(String::from)
+    }
+
     fn to_project(&self, project_file: &ProjectFile) -> Result<Project> {
         let name = project_file.name.clone();
         let source = project_file.source.clone();
-        let status = self.container_status_for(&name)?;
+        let compose_file = self.get_compose_file_path(&name, &source)?;
+        let status = self.container_status_for(&compose_file)?;
         let repository_dir = Path::new(&self.resources_config.repositories_dir).join(&name);
         let last_updated_at = self
             .git_client
@@ -111,12 +137,18 @@ where
         })
     }
 
-    fn container_status_for(&self, project_name: &str) -> Result<String, ProjectUsecaseError> {
-        let repository_dir = Path::new(&self.resources_config.repositories_dir).join(project_name);
+    fn container_status_for(&self, compose_file_path: &str) -> Result<String, ProjectUsecaseError> {
         let containers = self
             .compose_client
-            .list_containers(repository_dir.to_str().unwrap())
-            .map_err(|e| ProjectUsecaseError::ListProjectsFailed(e.to_string()))?;
+            .list_containers(compose_file_path)
+            .map_err(|e| {
+                let error_msg = format!(
+                    "Failed to list containers for compose file '{}': {}",
+                    compose_file_path, e
+                );
+                eprintln!("Project operation failed: {}", error_msg);
+                ProjectUsecaseError::ListProjectsFailed(error_msg)
+            })?;
 
         Ok(build_container_status_string(&containers))
     }
