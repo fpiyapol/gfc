@@ -11,4 +11,11 @@ impl ErrorCode {
     pub const DOCKER_COMPOSE_DOWN_FAILED: &'static str = "D101";
     pub const DOCKER_COMPOSE_LIST_CONTAINERS_FAILED: &'static str = "D102";
     pub const DOCKER_COMPOSE_FILE_NOT_FOUND: &'static str = "D103";
+
+    // Project errors: P1xx
+    pub const PROJECT_CREATE_FAILED: &'static str = "P100";
+    pub const PROJECT_LIST_FAILED: &'static str = "P101";
+    pub const PROJECT_INVALID_PATH: &'static str = "P102";
+    pub const PROJECT_FILE_READ_FAILED: &'static str = "P103";
+    pub const PROJECT_NOT_FOUND: &'static str = "P104";
 }

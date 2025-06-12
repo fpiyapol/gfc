@@ -17,7 +17,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-pub struct ResourcesConfig {
+pub struct WorkspaceConfig {
     pub projects_dir: String,
     pub repositories_dir: String,
 }
@@ -25,7 +25,7 @@ pub struct ResourcesConfig {
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Config {
     pub server: ServerConfig,
-    pub resources: ResourcesConfig,
+    pub workspace: WorkspaceConfig,
 }
 
 impl Config {
@@ -50,7 +50,7 @@ mod tests {
             server:
             host: 127.0.0.1
             port: 8080
-            resources:
+            workspace:
             projects_dir: /tmp/projects
             repositories_dir: /tmp/repos
             "#;
@@ -63,8 +63,8 @@ mod tests {
         let config = config.unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 8080);
-        assert_eq!(config.resources.projects_dir, "/tmp/projects");
-        assert_eq!(config.resources.repositories_dir, "/tmp/repos");
+        assert_eq!(config.workspace.projects_dir, "/tmp/projects");
+        assert_eq!(config.workspace.repositories_dir, "/tmp/repos");
     }
 
     #[test]
