@@ -1,15 +1,16 @@
-use anyhow::Result;
 use glob::glob;
 use std::fs;
+use std::io::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::config::WorkspaceConfig;
 use crate::errors::project::ProjectUsecaseError;
+use crate::errors::GfcResult;
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::git::GitSource;
 use crate::models::project::{Project, ProjectFile};
-use crate::models::response::{GenericResponse, ResponseStatus};
+
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 
@@ -41,23 +42,20 @@ where
         }
     }
 
-    pub fn create_project(
-        &self,
-        project_file: ProjectFile,
-    ) -> Result<GenericResponse<ResponseStatus>, ProjectUsecaseError> {
+    pub fn create_project(&self, project_file: ProjectFile) -> GfcResult<()> {
         println!("Creating project: {}", project_file.name);
 
         let git_client = Arc::clone(&self.git_client);
         let compose_client = Arc::clone(&self.compose_client);
 
-        let (project_path, project_file_path, repository_dir) =
+        let (project_path, project_file_path, repository_path) =
             get_project_and_repository_workspace_paths(&self.workspace_config, &project_file.name);
 
         setup_project_workspace(
             &project_file,
             &project_path,
             &project_file_path,
-            &repository_dir,
+            &repository_path,
         )
         .map_err(|e| ProjectUsecaseError::CreateProjectFailed {
             project_name: project_file.name.clone(),
@@ -65,7 +63,7 @@ where
         })?;
 
         let git_source = project_file.source.clone();
-        let repository_dir = repository_dir.clone();
+        let repository_dir = repository_path.clone();
         let project_name = project_file.name.clone();
         let compose_file_path = self.get_compose_file_path(&project_name, &git_source)?;
 
@@ -75,10 +73,10 @@ where
             println!("Project '{}' creation completed successfully", project_name);
         });
 
-        Ok(GenericResponse::result(ResponseStatus::Success))
+        Ok(())
     }
 
-    pub fn list_projects(&self) -> Result<GenericResponse<Project>, ProjectUsecaseError> {
+    pub fn list_projects(&self) -> GfcResult<Vec<Project>> {
         let root_project_path = Path::new(&self.workspace_config.projects_dir);
         let project_files = find_all_project_files(root_project_path).map_err(|e| {
             ProjectUsecaseError::ListProjectsFailed {
@@ -94,14 +92,14 @@ where
                 reason: format!("Failed to process project files: {}", e),
             })?;
 
-        Ok(GenericResponse::results(projects))
+        Ok(projects)
     }
 
     fn get_compose_file_path(
         &self,
         project_name: &str,
         git_source: &GitSource,
-    ) -> Result<String, ProjectUsecaseError> {
+    ) -> GfcResult<String> {
         let repository_dir = Path::new(&self.workspace_config.repositories_dir).join(project_name);
         let compose_file_path = repository_dir.join(&git_source.path);
 
@@ -113,12 +111,12 @@ where
                     project_name
                 );
                 println!("Project operation failed: {}", error_msg);
-                ProjectUsecaseError::InvalidPath { reason: error_msg }
+                ProjectUsecaseError::InvalidPath { reason: error_msg }.into()
             })
             .map(String::from)
     }
 
-    fn to_project(&self, project_file: &ProjectFile) -> Result<Project, ProjectUsecaseError> {
+    fn to_project(&self, project_file: &ProjectFile) -> GfcResult<Project> {
         let name = project_file.name.clone();
         let source = project_file.source.clone();
 
@@ -154,7 +152,7 @@ where
         })
     }
 
-    fn container_status_for(&self, compose_file_path: &str) -> Result<String, ProjectUsecaseError> {
+    fn container_status_for(&self, compose_file_path: &str) -> GfcResult<String> {
         // Extract project name from the path for better error messages
         let project_name = Path::new(compose_file_path)
             .parent()
@@ -183,19 +181,28 @@ where
     }
 }
 
-/// Prepare the project and repository directories and write the project YAML file.
-/// Creates all directories if they do not exist.
+/// Ensure all workspace directories exist and project definition file is written.
 fn setup_project_workspace(
     project_file: &ProjectFile,
     project_path: &Path,
     project_file_path: &Path,
     repository_path: &Path,
-) -> Result<()> {
-    let content = serde_yaml::to_string(project_file)?;
-    fs::create_dir_all(project_path)?;
-    fs::write(project_file_path, content)?;
-    fs::create_dir_all(repository_path)?;
+) -> std::io::Result<()> {
+    ensure_workspace_dirs(project_path, repository_path)?;
+    write_project_definition_file(project_file, project_file_path)
+}
+
+/// Create workspace directories if they are missing.
+fn ensure_workspace_dirs(project_dir: &Path, repository_dir: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(project_dir)?;
+    fs::create_dir_all(repository_dir)?;
     Ok(())
+}
+
+/// Serialise the `project.yaml` file beside the project directory.
+fn write_project_definition_file(project: &ProjectFile, dest: &Path) -> std::io::Result<()> {
+    let yaml = serde_yaml::to_string(project).map_err(io::Error::other)?;
+    fs::write(dest, yaml)
 }
 
 fn get_project_and_repository_workspace_paths(
@@ -208,28 +215,32 @@ fn get_project_and_repository_workspace_paths(
     (project_path, project_file_path, repository_path)
 }
 
-fn find_all_project_files(root_path: &Path) -> Result<Vec<ProjectFile>> {
-    let patterns = [
-        format!("{}/**/*.yml", root_path.display()),
-        format!("{}/**/*.yaml", root_path.display()),
-    ];
+fn find_all_project_files(workspace_root: &Path) -> std::io::Result<Vec<ProjectFile>> {
+    let paths = glob_project_file_paths(workspace_root)?;
 
-    let files = patterns
-        .iter()
-        .flat_map(|pattern| glob(pattern).into_iter().flatten())
-        .collect::<Result<Vec<PathBuf>, _>>()?;
-
-    let contents = files
+    let contents: Vec<String> = paths
         .iter()
         .map(fs::read_to_string)
         .collect::<Result<Vec<String>, _>>()?;
 
-    let projects = contents
+    contents
         .iter()
-        .map(|content| serde_yaml::from_str(content))
-        .collect::<Result<Vec<ProjectFile>, _>>()?;
+        .map(|yaml| serde_yaml::from_str::<ProjectFile>(yaml).map_err(io::Error::other))
+        .collect()
+}
 
-    Ok(projects)
+/// Return all `*.yml` and `*.yaml` files under the projects workspace.
+fn glob_project_file_paths(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let patterns = ["**/*.yml", "**/*.yaml"];
+    patterns
+        .iter()
+        .map(|pattern| format!("{}/{}", root.display(), pattern))
+        .map(|pattern| glob(&pattern).map_err(io::Error::other))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Result<Vec<PathBuf>, _>>()
+        .map_err(io::Error::other)
 }
 
 fn build_container_status_string(containers: &[Container]) -> String {
@@ -247,6 +258,11 @@ fn build_container_status_string(containers: &[Container]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{self, File};
+    use std::path::Path;
+    use tempfile::TempDir;
+
+    use super::{find_all_project_files, glob_project_file_paths};
     use crate::models::docker_compose::{Container, ContainerState};
     use crate::usecases::project::build_container_status_string;
 
@@ -255,6 +271,12 @@ mod tests {
             name: name.to_string(),
             state,
         }
+    }
+
+    fn write_yaml(dir: &Path, name: &str, yaml: &str) {
+        let path = dir.join(name);
+        File::create(&path).unwrap();
+        fs::write(path, yaml).unwrap();
     }
 
     #[test]
@@ -314,5 +336,41 @@ mod tests {
         let actual = build_container_status_string(&containers);
 
         assert_eq!(actual, "Running (2/3)");
+    }
+
+    #[test]
+    fn given_two_project_files_when_glob_then_return_two_paths() {
+        let tmp = TempDir::new().unwrap();
+        write_yaml(tmp.path(), "a.yml", "name: a\nsource:\n  url: https://example.com/a.git\n  branch: main\n  path: docker-compose.yml\n");
+        write_yaml(tmp.path(), "b.yaml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n");
+
+        let paths = glob_project_file_paths(tmp.path()).unwrap();
+
+        assert_eq!(paths.len(), 2);
+    }
+
+    #[test]
+    fn given_valid_project_files_when_find_all_then_return_structs() {
+        let tmp = TempDir::new().unwrap();
+        write_yaml(
+            tmp.path(),
+            "foo.yml",
+            "---\nname: foo\nsource:\n  url: https://example.com/foo.git\n  branch: main\n  path: docker-compose.yml\n",
+        );
+
+        let projects = find_all_project_files(tmp.path()).unwrap();
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].name, "foo");
+    }
+
+    #[test]
+    fn given_invalid_yaml_when_find_all_then_error() {
+        let tmp = TempDir::new().unwrap();
+        write_yaml(tmp.path(), "bad.yml", "this: is: not: yaml");
+
+        let result = find_all_project_files(tmp.path());
+
+        assert!(result.is_err());
     }
 }

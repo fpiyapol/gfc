@@ -10,6 +10,16 @@ pub enum ConfigError {
     Yaml(#[from] serde_yaml::Error),
 }
 
+impl ConfigError {
+    pub fn error_code(&self) -> &'static str {
+        use crate::errors::codes::ErrorCode as C;
+        match self {
+            ConfigError::Io(_) => C::PROJECT_FILE_READ_FAILED,
+            ConfigError::Yaml(_) => C::PROJECT_FILE_READ_FAILED,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct ServerConfig {
     pub host: String,
@@ -47,13 +57,13 @@ mod tests {
     #[test]
     fn given_valid_yaml_when_loaded_then_config_is_parsed_correctly() {
         let yaml = r#"
-            server:
-            host: 127.0.0.1
-            port: 8080
-            workspace:
-            projects_dir: /tmp/projects
-            repositories_dir: /tmp/repos
-            "#;
+server:
+  host: 127.0.0.1
+  port: 8080
+workspace:
+  projects_dir: /tmp/projects
+  repositories_dir: /tmp/repos
+"#;
         let mut tmpfile = NamedTempFile::new().unwrap();
         write!(tmpfile, "{}", yaml).unwrap();
 
