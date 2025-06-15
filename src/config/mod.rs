@@ -58,13 +58,13 @@ mod tests {
     #[test]
     fn given_valid_yaml_when_loaded_then_config_is_parsed_correctly() {
         let yaml = r#"
-server:
-  host: 127.0.0.1
-  port: 8080
-workspace:
-  projects_dir: /tmp/projects
-  repositories_dir: /tmp/repos
-"#;
+        server:
+            host: 127.0.0.1
+            port: 8080
+        workspace:
+            projects_dir: /tmp/projects
+            repositories_dir: /tmp/repos
+        "#;
         let mut tmpfile = NamedTempFile::new().unwrap();
         write!(tmpfile, "{}", yaml).unwrap();
 
