@@ -1,10 +1,11 @@
 use anyhow::Result;
 
+use gfc::errors::compose::ComposeError;
 use gfc::models::docker_compose::ContainerState;
 use gfc::repositories::compose_client::ComposeClient;
 use gfc::repositories::container_client::ContainerClient;
 use gfc::repositories::docker_client::DockerClient;
-use gfc::repositories::docker_compose_client::{DockerComposeClient, DockerComposeError};
+use gfc::repositories::docker_compose_client::DockerComposeClient;
 
 #[test]
 fn create_docker_client() {
@@ -33,10 +34,13 @@ async fn create_and_remove_container() -> Result<()> {
 #[tokio::test]
 async fn docker_compose_up_and_down() -> Result<()> {
     let docker_compose_client = DockerComposeClient::new()?;
-    let project = "resources/for-test-a";
+    let project = "resources/for-integration-test/for-test-a/docker-compose.yml";
 
     let up_result = docker_compose_client.up(&project);
     let status = docker_compose_client.list_containers(&project);
+
+    println!("up_result: {:#?}", up_result);
+    println!("status: {:#?}", status);
 
     assert!(up_result.is_ok());
     assert!(status.is_ok());
@@ -60,12 +64,12 @@ async fn docker_compose_execute_error() -> Result<()> {
     let status = docker_compose_client.list_containers(&project);
 
     assert!(match up_result {
-        Err(DockerComposeError::DockerComposeFileDoesNotExist) => true,
+        Err(ComposeError::ComposeFileNotFound { .. }) => true,
         _ => false,
     });
 
     assert!(match status {
-        Err(DockerComposeError::DockerComposeFileDoesNotExist) => true,
+        Err(ComposeError::ComposeFileNotFound { .. }) => true,
         _ => false,
     });
 

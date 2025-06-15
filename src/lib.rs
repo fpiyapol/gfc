@@ -1,4 +1,5 @@
 pub mod config;
+pub mod errors;
 pub mod handlers;
 pub mod models;
 pub mod repositories;
@@ -45,7 +46,7 @@ fn create_project_usecase(
     Ok(ProjectUsecase::new(
         docker_compose_client,
         git_client,
-        config.resources.clone(),
+        config.workspace.clone(),
     ))
 }
 

@@ -1,0 +1,6 @@
+services:
+  svc-a:
+    image: nginx:latest
+
+  svc-b:
+    image: nginx:latest
