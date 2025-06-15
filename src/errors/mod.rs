@@ -12,6 +12,10 @@ use crate::errors::project::ProjectUsecaseError;
 
 pub type GfcResult<T> = Result<T, GfcError>;
 
+pub trait HasErrorCode {
+    fn error_code(&self) -> &'static str;
+}
+
 #[derive(Debug, Error)]
 pub enum GfcError {
     #[error(transparent)]
@@ -30,8 +34,8 @@ pub enum GfcError {
     Internal(#[from] anyhow::Error),
 }
 
-impl GfcError {
-    pub fn error_code(&self) -> &'static str {
+impl HasErrorCode for GfcError {
+    fn error_code(&self) -> &'static str {
         match self {
             GfcError::Config(e) => e.error_code(),
             GfcError::Git(e) => e.error_code(),

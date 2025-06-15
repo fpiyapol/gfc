@@ -17,11 +17,8 @@ impl DockerComposeClient {
         Ok(DockerComposeClient {})
     }
 
-    fn execute(&self, args: &[&str], working_dir: &str) -> Result<Output, std::io::Error> {
-        Command::new("docker compose")
-            .args(args)
-            .current_dir(working_dir)
-            .output()
+    fn execute(&self, args: &[&str]) -> Result<Output, std::io::Error> {
+        Command::new("docker").arg("compose").args(args).output()
     }
 
     fn validate_compose_file_exists_and_not_directory(
@@ -43,36 +40,6 @@ impl DockerComposeClient {
         }
 
         Ok(())
-    }
-
-    fn get_working_dir_and_file_name_from(
-        &self,
-        compose_file_path: &str,
-    ) -> Result<(String, String), ComposeError> {
-        let path = Path::new(compose_file_path);
-        let working_dir = match path.parent().and_then(|p| p.to_str()) {
-            Some(dir) => dir.to_string(),
-            None => {
-                println!("Could not extract parent directory from path, using current directory");
-                ".".to_string()
-            }
-        };
-
-        let filename = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| {
-                println!(
-                    "Could not extract filename from path: {}",
-                    compose_file_path
-                );
-                ComposeError::ComposeFileNotFound {
-                    path: compose_file_path.to_string(),
-                }
-            })
-            .map(|s| s.to_string())?;
-
-        Ok((working_dir, filename))
     }
 
     fn parse_container_json(&self, json_line: &str, path: &str) -> Result<Container, ComposeError> {
@@ -145,11 +112,9 @@ impl ComposeClient for DockerComposeClient {
 
         self.validate_compose_file_exists_and_not_directory(compose_file_path)?;
 
-        let (working_dir, filename) = self.get_working_dir_and_file_name_from(compose_file_path)?;
+        let args = ["-f", compose_file_path, "up", "-d"];
 
-        let args = ["-f", &filename, "up", "-d"];
-
-        let output = self.execute(&args, &working_dir).map_err(|e| {
+        let output = self.execute(&args).map_err(|e| {
             println!("Docker compose up command error: {}", e);
             ComposeError::UpFailed {
                 path: compose_file_path.to_string(),
@@ -175,11 +140,9 @@ impl ComposeClient for DockerComposeClient {
 
         self.validate_compose_file_exists_and_not_directory(compose_file_path)?;
 
-        let (working_dir, filename) = self.get_working_dir_and_file_name_from(compose_file_path)?;
+        let args = ["-f", compose_file_path, "down"];
 
-        let args = ["-f", &filename, "down"];
-
-        let output = self.execute(&args, &working_dir).map_err(|e| {
+        let output = self.execute(&args).map_err(|e| {
             println!("Docker compose down command error: {}", e);
             ComposeError::DownFailed {
                 path: compose_file_path.to_string(),
@@ -204,12 +167,10 @@ impl ComposeClient for DockerComposeClient {
         println!("Listing containers using {}", compose_file_path);
 
         self.validate_compose_file_exists_and_not_directory(compose_file_path)?;
-        let (working_dir, filename) = self.get_working_dir_and_file_name_from(compose_file_path)?;
-
-        let args = ["-f", &filename, "ps", "--all", "--format", "json"];
+        let args = ["-f", compose_file_path, "ps", "--all", "--format", "json"];
 
         let output = self
-            .execute(&args, &working_dir)
+            .execute(&args)
             .with_context(|| {
                 format!(
                     "Executing 'docker compose ps' using '{}'",

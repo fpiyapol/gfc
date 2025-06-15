@@ -10,12 +10,13 @@ pub enum ConfigError {
     Yaml(#[from] serde_yaml::Error),
 }
 
-impl ConfigError {
-    pub fn error_code(&self) -> &'static str {
-        use crate::errors::codes::ErrorCode as C;
+use crate::errors::{codes::ErrorCode, HasErrorCode};
+
+impl HasErrorCode for ConfigError {
+    fn error_code(&self) -> &'static str {
         match self {
-            ConfigError::Io(_) => C::PROJECT_FILE_READ_FAILED,
-            ConfigError::Yaml(_) => C::PROJECT_FILE_READ_FAILED,
+            ConfigError::Io(_) => ErrorCode::PROJECT_FILE_READ_FAILED,
+            ConfigError::Yaml(_) => ErrorCode::PROJECT_FILE_PARSE_FAILED,
         }
     }
 }

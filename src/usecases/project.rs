@@ -10,7 +10,6 @@ use crate::errors::GfcResult;
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::git::GitSource;
 use crate::models::project::{Project, ProjectFile};
-
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 
@@ -273,10 +272,10 @@ mod tests {
         }
     }
 
-    fn write_yaml(dir: &Path, name: &str, yaml: &str) {
+    fn write_yaml(dir: &Path, name: &str, yaml: &str) -> std::io::Result<()> {
         let path = dir.join(name);
-        File::create(&path).unwrap();
-        fs::write(path, yaml).unwrap();
+        File::create(&path)?;
+        fs::write(path, yaml)
     }
 
     #[test]
@@ -339,38 +338,41 @@ mod tests {
     }
 
     #[test]
-    fn given_two_project_files_when_glob_then_return_two_paths() {
-        let tmp = TempDir::new().unwrap();
-        write_yaml(tmp.path(), "a.yml", "name: a\nsource:\n  url: https://example.com/a.git\n  branch: main\n  path: docker-compose.yml\n");
-        write_yaml(tmp.path(), "b.yaml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n");
+    fn given_two_project_files_when_glob_then_return_two_paths() -> anyhow::Result<()> {
+        let tmp = TempDir::new()?;
+        write_yaml(tmp.path(), "a.yml", "name: a\nsource:\n  url: https://example.com/a.git\n  branch: main\n  path: docker-compose.yml\n")?;
+        write_yaml(tmp.path(), "b.yaml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n")?;
 
-        let paths = glob_project_file_paths(tmp.path()).unwrap();
+        let paths = glob_project_file_paths(tmp.path())?;
 
         assert_eq!(paths.len(), 2);
+        Ok(())
     }
 
     #[test]
-    fn given_valid_project_files_when_find_all_then_return_structs() {
-        let tmp = TempDir::new().unwrap();
+    fn given_valid_project_files_when_find_all_then_return_structs() -> anyhow::Result<()> {
+        let tmp = TempDir::new()?;
         write_yaml(
             tmp.path(),
             "foo.yml",
             "---\nname: foo\nsource:\n  url: https://example.com/foo.git\n  branch: main\n  path: docker-compose.yml\n",
-        );
+        )?;
 
-        let projects = find_all_project_files(tmp.path()).unwrap();
+        let projects = find_all_project_files(tmp.path())?;
 
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "foo");
+        Ok(())
     }
 
     #[test]
-    fn given_invalid_yaml_when_find_all_then_error() {
-        let tmp = TempDir::new().unwrap();
-        write_yaml(tmp.path(), "bad.yml", "this: is: not: yaml");
+    fn given_invalid_yaml_when_find_all_then_error() -> anyhow::Result<()> {
+        let tmp = TempDir::new()?;
+        write_yaml(tmp.path(), "bad.yml", "this: is: not: yaml")?;
 
         let result = find_all_project_files(tmp.path());
 
         assert!(result.is_err());
+        Ok(())
     }
 }

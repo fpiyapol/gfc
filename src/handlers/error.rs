@@ -2,7 +2,7 @@ use axum::http::StatusCode;
 use axum::{response::IntoResponse, Json};
 use serde::Serialize;
 
-use crate::errors::GfcError;
+use crate::errors::{GfcError, HasErrorCode};
 
 #[derive(Serialize)]
 struct Problem<'a> {
