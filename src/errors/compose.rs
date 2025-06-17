@@ -20,12 +20,10 @@ impl ComposeError {
         use crate::errors::codes::ErrorCode;
 
         match self {
-            ComposeError::UpFailed { .. } => ErrorCode::DOCKER_COMPOSE_UP_FAILED,
-            ComposeError::DownFailed { .. } => ErrorCode::DOCKER_COMPOSE_DOWN_FAILED,
-            ComposeError::ListContainersFailed { .. } => {
-                ErrorCode::DOCKER_COMPOSE_LIST_CONTAINERS_FAILED
-            }
-            ComposeError::ComposeFileNotFound { .. } => ErrorCode::DOCKER_COMPOSE_FILE_NOT_FOUND,
+            ComposeError::UpFailed { .. } => ErrorCode::COMPOSE_UP_FAILED,
+            ComposeError::DownFailed { .. } => ErrorCode::COMPOSE_DOWN_FAILED,
+            ComposeError::ListContainersFailed { .. } => ErrorCode::COMPOSE_LIST_CONTAINERS_FAILED,
+            ComposeError::ComposeFileNotFound { .. } => ErrorCode::COMPOSE_FILE_NOT_FOUND,
         }
     }
 }

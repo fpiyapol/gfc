@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 use crate::errors::compose::ComposeError;
 use crate::models::docker_compose::Container;
 
