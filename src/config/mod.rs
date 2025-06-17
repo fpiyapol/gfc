@@ -10,6 +10,17 @@ pub enum ConfigError {
     Yaml(#[from] serde_yaml::Error),
 }
 
+use crate::errors::{codes::ErrorCode, HasErrorCode};
+
+impl HasErrorCode for ConfigError {
+    fn error_code(&self) -> &'static str {
+        match self {
+            ConfigError::Io(_) => ErrorCode::PROJECT_FILE_READ_FAILED,
+            ConfigError::Yaml(_) => ErrorCode::PROJECT_FILE_PARSE_FAILED,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct ServerConfig {
     pub host: String,
@@ -17,7 +28,7 @@ pub struct ServerConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
-pub struct ResourcesConfig {
+pub struct WorkspaceConfig {
     pub projects_dir: String,
     pub repositories_dir: String,
 }
@@ -25,7 +36,7 @@ pub struct ResourcesConfig {
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Config {
     pub server: ServerConfig,
-    pub resources: ResourcesConfig,
+    pub workspace: WorkspaceConfig,
 }
 
 impl Config {
@@ -47,13 +58,13 @@ mod tests {
     #[test]
     fn given_valid_yaml_when_loaded_then_config_is_parsed_correctly() {
         let yaml = r#"
-            server:
+        server:
             host: 127.0.0.1
             port: 8080
-            resources:
+        workspace:
             projects_dir: /tmp/projects
             repositories_dir: /tmp/repos
-            "#;
+        "#;
         let mut tmpfile = NamedTempFile::new().unwrap();
         write!(tmpfile, "{}", yaml).unwrap();
 
@@ -63,8 +74,8 @@ mod tests {
         let config = config.unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 8080);
-        assert_eq!(config.resources.projects_dir, "/tmp/projects");
-        assert_eq!(config.resources.repositories_dir, "/tmp/repos");
+        assert_eq!(config.workspace.projects_dir, "/tmp/projects");
+        assert_eq!(config.workspace.repositories_dir, "/tmp/repos");
     }
 
     #[test]

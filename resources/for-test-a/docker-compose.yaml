@@ -1,6 +1,0 @@
-services:
-  svc-a:
-    image: hello-world:latest
-
-  svc-b:
-    image: hello-world:latest
