@@ -1,35 +1,36 @@
 use anyhow::Result;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{LogExporter, SpanExporter};
+use opentelemetry_otlp::{LogExporter, SpanExporter, WithExportConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
-use std::sync::OnceLock;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
-pub fn init_telemetry() -> Result<()> {
-    let filter = EnvFilter::new("info")
-        .add_directive("hyper=off".parse().unwrap())
-        .add_directive("tonic=off".parse().unwrap())
-        .add_directive("h2=off".parse().unwrap())
-        .add_directive("reqwest=off".parse().unwrap())
-        .add_directive("opentelemetry=off".parse().unwrap());
+use crate::config::TelemetryConfig;
 
-    let logger_provider = init_logs();
+pub fn initialize_telemetry_with_configuration(config: &TelemetryConfig) -> Result<()> {
+    if !config.enabled {
+        initialize_basic_logging(&config.log_level, &config.excluded_modules)?;
+        return Ok(());
+    }
+
+    let env_filter = create_environment_filter(&config.log_level, &config.excluded_modules)?;
+
+    let logger_provider = create_logger_provider(config)?;
     let logger_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
+    let tracer_provider = create_tracer_provider(config)?;
+    let tracer = tracer_provider.tracer(config.service_name.clone());
+    let tracer_layer = OpenTelemetryLayer::new(tracer);
 
     let fmt_layer = tracing_subscriber::fmt::layer().with_thread_names(true);
 
-    let tracer_provider = init_tracer();
-    let tracer = tracer_provider.tracer("gfc");
-    let tracer_layer = OpenTelemetryLayer::new(tracer);
-
     tracing_subscriber::registry()
-        .with(filter)
+        .with(env_filter)
         .with(fmt_layer)
         .with(logger_layer)
         .with(tracer_layer)
@@ -38,33 +39,63 @@ pub fn init_telemetry() -> Result<()> {
     Ok(())
 }
 
-fn get_resource() -> Resource {
-    static RESOURCE: OnceLock<Resource> = OnceLock::new();
-    RESOURCE
-        .get_or_init(|| Resource::builder().with_service_name("gfc").build())
-        .clone()
+fn initialize_basic_logging(log_level: &str, excluded_modules: &[String]) -> Result<()> {
+    let environment_filter = create_environment_filter(log_level, excluded_modules)?;
+    let fmt_layer = tracing_subscriber::fmt::layer().with_thread_names(true);
+
+    tracing_subscriber::registry()
+        .with(environment_filter)
+        .with(fmt_layer)
+        .init();
+
+    Ok(())
 }
 
-fn init_tracer() -> SdkTracerProvider {
-    let exporter = SpanExporter::builder()
-        .with_tonic()
-        .build()
-        .expect("Failed to create span exporter");
+fn create_environment_filter(log_level: &str, excluded_modules: &[String]) -> Result<EnvFilter> {
+    let mut filter = EnvFilter::new(log_level);
 
-    SdkTracerProvider::builder()
-        .with_resource(get_resource())
-        .with_batch_exporter(exporter)
-        .build()
+    for module in excluded_modules {
+        let directive = format!("{}=off", module);
+        filter = filter.add_directive(directive.parse()?);
+    }
+
+    Ok(filter)
 }
 
-fn init_logs() -> SdkLoggerProvider {
-    let exporter = LogExporter::builder()
-        .with_tonic()
-        .build()
-        .expect("Failed to create log exporter");
+fn create_opentelemetry_resource(service_name: String) -> Resource {
+    Resource::builder().with_service_name(service_name).build()
+}
 
-    SdkLoggerProvider::builder()
-        .with_resource(get_resource())
-        .with_batch_exporter(exporter)
+fn create_tracer_provider(config: &TelemetryConfig) -> Result<SdkTracerProvider> {
+    let exporter_builder = SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(&config.otlp_endpoint);
+
+    let exporter = exporter_builder
         .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create span exporter: {}", e))?;
+
+    let tracer_provider = SdkTracerProvider::builder()
+        .with_resource(create_opentelemetry_resource(config.service_name.clone()))
+        .with_batch_exporter(exporter)
+        .build();
+
+    Ok(tracer_provider)
+}
+
+fn create_logger_provider(config: &TelemetryConfig) -> Result<SdkLoggerProvider> {
+    let exporter_builder = LogExporter::builder()
+        .with_tonic()
+        .with_endpoint(&config.otlp_endpoint);
+
+    let exporter = exporter_builder
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to create log exporter: {}", e))?;
+
+    let logger_provider = SdkLoggerProvider::builder()
+        .with_resource(create_opentelemetry_resource(config.service_name.clone()))
+        .with_batch_exporter(exporter)
+        .build();
+
+    Ok(logger_provider)
 }

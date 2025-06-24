@@ -46,11 +46,9 @@ impl DockerComposeClient {
     fn parse_container_json(&self, json_line: &str, path: &str) -> Result<Container, ComposeError> {
         let value = serde_json::from_str(json_line)
             .with_context(|| format!("Parsing container JSON from file '{}'", path))
-            .map_err(|e| {
-                ComposeError::ListContainersFailed {
-                    path: path.to_string(),
-                    reason: format!("Failed to parse Docker compose output: {:#}", e),
-                }
+            .map_err(|e| ComposeError::ListContainersFailed {
+                path: path.to_string(),
+                reason: format!("Failed to parse Docker compose output: {:#}", e),
             })?;
 
         let name = self.extract_json_string_field(&value, "Name", path)?;
@@ -107,7 +105,6 @@ impl DockerComposeClient {
 impl ComposeClient for DockerComposeClient {
     #[instrument(skip(self), name = "compose_repository::up", fields(compose.file = %compose_file_path))]
     fn up(&self, compose_file_path: &str) -> Result<(), ComposeError> {
-
         debug!(
             compose.file_path = %compose_file_path,
             "Validating compose file exists"
@@ -121,11 +118,9 @@ impl ComposeClient for DockerComposeClient {
             "Executing docker compose up command"
         );
 
-        let output = self.execute(&args).map_err(|e| {
-            ComposeError::UpFailed {
-                path: compose_file_path.to_string(),
-                reason: format!("Failed to execute docker compose up command: {}", e),
-            }
+        let output = self.execute(&args).map_err(|e| ComposeError::UpFailed {
+            path: compose_file_path.to_string(),
+            reason: format!("Failed to execute docker compose up command: {}", e),
         })?;
 
         if !output.status.success() {
@@ -147,7 +142,6 @@ impl ComposeClient for DockerComposeClient {
 
     #[instrument(skip(self), name = "compose_repository::down", fields(compose.file = %compose_file_path))]
     fn down(&self, compose_file_path: &str) -> Result<(), ComposeError> {
-
         debug!(
             compose.file_path = %compose_file_path,
             "Validating compose file exists for down operation"
@@ -161,11 +155,9 @@ impl ComposeClient for DockerComposeClient {
             "Executing docker compose down command"
         );
 
-        let output = self.execute(&args).map_err(|e| {
-            ComposeError::DownFailed {
-                path: compose_file_path.to_string(),
-                reason: format!("Failed to execute docker compose down command: {}", e),
-            }
+        let output = self.execute(&args).map_err(|e| ComposeError::DownFailed {
+            path: compose_file_path.to_string(),
+            reason: format!("Failed to execute docker compose down command: {}", e),
         })?;
 
         if !output.status.success() {
@@ -187,13 +179,12 @@ impl ComposeClient for DockerComposeClient {
 
     #[instrument(skip(self), name = "compose_repository::list_containers", fields(compose.file = %compose_file_path))]
     fn list_containers(&self, compose_file_path: &str) -> Result<Vec<Container>, ComposeError> {
-
         debug!(
             compose.file_path = %compose_file_path,
             "Validating compose file exists for container listing"
         );
         self.validate_compose_file_exists_and_not_directory(compose_file_path)?;
-        
+
         let args = ["-f", compose_file_path, "ps", "--all", "--format", "json"];
         debug!(
             docker.command = "compose",
@@ -239,7 +230,7 @@ impl ComposeClient for DockerComposeClient {
             .lines()
             .filter(|line| !line.trim().is_empty())
             .collect();
-        
+
         debug!(
             docker.output_lines = lines.len(),
             "Processing docker compose ps output"

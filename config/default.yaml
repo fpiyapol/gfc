@@ -1,7 +1,19 @@
 server:
   host: 0.0.0.0
-  port: 3000
+  port: 3080
 
 workspace:
   projects_dir: resources/projects # where project files are stored
   repositories_dir: resources/repositories # where repositories are cloned
+
+telemetry:
+  enabled: true
+  service_name: gfc
+  otlp_endpoint: http://localhost:4317
+  log_level: info
+  excluded_modules:
+    - hyper
+    - tonic
+    - h2
+    - reqwest
+    - opentelemetry

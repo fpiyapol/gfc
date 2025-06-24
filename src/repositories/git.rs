@@ -51,12 +51,12 @@ impl GitClient for GitClientImpl {
             &working_dir.to_string_lossy(),
         ];
 
-        let output = self.execute_git_command(&args, None).map_err(|e| {
-            GitError::CloneFailed {
+        let output = self
+            .execute_git_command(&args, None)
+            .map_err(|e| GitError::CloneFailed {
                 url: source.url.clone(),
                 reason: format!("Failed to execute git clone command: {}", e),
-            }
-        })?;
+            })?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -95,11 +95,9 @@ impl GitClient for GitClientImpl {
 
         let output = self
             .execute_git_command(&args, Some(working_dir))
-            .map_err(|e| {
-                GitError::PullFailed {
-                    path: working_dir.to_path_buf(),
-                    reason: format!("Failed to execute git pull command: {}", e),
-                }
+            .map_err(|e| GitError::PullFailed {
+                path: working_dir.to_path_buf(),
+                reason: format!("Failed to execute git pull command: {}", e),
             })?;
 
         if !output.status.success() {
@@ -131,11 +129,9 @@ impl GitClient for GitClientImpl {
 
         let output = self
             .execute_git_command(&args, Some(working_dir))
-            .map_err(|e| {
-                GitError::GetLastCommitTimestampFailed {
-                    path: working_dir.to_path_buf(),
-                    reason: format!("Failed to execute git log command: {}", e),
-                }
+            .map_err(|e| GitError::GetLastCommitTimestampFailed {
+                path: working_dir.to_path_buf(),
+                reason: format!("Failed to execute git log command: {}", e),
             })?;
 
         if !output.status.success() {
@@ -157,12 +153,13 @@ impl GitClient for GitClientImpl {
             "Received timestamp from git log"
         );
 
-        let epoch = timestamp_str.parse::<i64>().map_err(|e| {
-            GitError::GetLastCommitTimestampFailed {
-                path: working_dir.to_path_buf(),
-                reason: format!("Failed to parse timestamp '{}': {}", timestamp_str, e),
-            }
-        })?;
+        let epoch =
+            timestamp_str
+                .parse::<i64>()
+                .map_err(|e| GitError::GetLastCommitTimestampFailed {
+                    path: working_dir.to_path_buf(),
+                    reason: format!("Failed to parse timestamp '{}': {}", timestamp_str, e),
+                })?;
 
         let timestamp = Utc.timestamp_opt(epoch, 0).single().ok_or_else(|| {
             GitError::GetLastCommitTimestampFailed {

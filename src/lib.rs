@@ -20,7 +20,9 @@ use crate::usecases::project::ProjectUsecase;
 
 pub async fn init() -> Result<()> {
     let config = load_config("config/default.yaml")?;
-    telemetry::init_telemetry()?;
+
+    let telemetry_config = config.telemetry.as_ref().cloned().unwrap_or_default();
+    telemetry::initialize_telemetry_with_configuration(&telemetry_config)?;
 
     let project_usecase = create_project_usecase(&config)?;
     let app = build_app(project_usecase);

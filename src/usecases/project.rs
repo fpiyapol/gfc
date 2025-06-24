@@ -159,11 +159,9 @@ where
         let last_updated_at = self
             .git_client
             .get_last_commit_timestamp(&repository_dir)
-            .map_err(|e| {
-                ProjectUsecaseError::ProjectNotFound {
-                    project_name: name.clone(),
-                    reason: format!("Git repository information unavailable: {}", e),
-                }
+            .map_err(|e| ProjectUsecaseError::ProjectNotFound {
+                project_name: name.clone(),
+                reason: format!("Git repository information unavailable: {}", e),
             })?
             .to_string();
 
@@ -186,10 +184,8 @@ where
         let containers = self
             .compose_client
             .list_containers(compose_file_path)
-            .map_err(|e| {
-                ProjectUsecaseError::ListProjectsFailed {
-                    reason: format!("Container listing failed: {}", e),
-                }
+            .map_err(|e| ProjectUsecaseError::ListProjectsFailed {
+                reason: format!("Container listing failed: {}", e),
             })?;
 
         Ok(build_container_status_string(&containers))

@@ -34,9 +34,37 @@ pub struct WorkspaceConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+pub struct TelemetryConfig {
+    pub enabled: bool,
+    pub service_name: String,
+    pub otlp_endpoint: String,
+    pub log_level: String,
+    pub excluded_modules: Vec<String>,
+}
+
+impl Default for TelemetryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            service_name: "gfc".to_string(),
+            otlp_endpoint: "http://localhost:4317".to_string(),
+            log_level: "info".to_string(),
+            excluded_modules: vec![
+                "hyper".to_string(),
+                "tonic".to_string(),
+                "h2".to_string(),
+                "reqwest".to_string(),
+                "opentelemetry".to_string(),
+            ],
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct Config {
     pub server: ServerConfig,
     pub workspace: WorkspaceConfig,
+    pub telemetry: Option<TelemetryConfig>,
 }
 
 impl Config {
