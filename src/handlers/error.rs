@@ -30,6 +30,7 @@ impl IntoResponse for GfcError {
             detail: self.to_string(),
             code: self.error_code(),
         };
+
         (status, Json(problem)).into_response()
     }
 }

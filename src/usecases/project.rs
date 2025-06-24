@@ -97,7 +97,7 @@ where
 
         let project_files = find_all_project_files(root_project_path).map_err(|e| {
             ProjectUsecaseError::ListProjectsFailed {
-                reason: format!("Failed to find project files: {}", e),
+                reason: e.to_string(),
             }
         })?;
 
@@ -110,8 +110,8 @@ where
             .into_iter()
             .map(|project_file| self.to_project(&project_file))
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| ProjectUsecaseError::ListProjectsFailed {
-                reason: format!("Failed to process project files: {}", e),
+            .map_err(|e| ProjectUsecaseError::ProjectFileProcessingFailed {
+                reason: e.to_string(),
             })?;
 
         info!(
@@ -175,7 +175,7 @@ where
 
     fn container_status_for(&self, compose_file_path: &str) -> GfcResult<String> {
         // Extract project name from the path for better error messages
-        let _project_name = Path::new(compose_file_path)
+        let project_name = Path::new(compose_file_path)
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|name| name.to_str())
@@ -184,8 +184,9 @@ where
         let containers = self
             .compose_client
             .list_containers(compose_file_path)
-            .map_err(|e| ProjectUsecaseError::ListProjectsFailed {
-                reason: format!("Container listing failed: {}", e),
+            .map_err(|e| ProjectUsecaseError::ContainerStatusCheckFailed {
+                project_name: project_name.to_string(),
+                reason: e.to_string(),
             })?;
 
         Ok(build_container_status_string(&containers))

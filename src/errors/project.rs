@@ -11,6 +11,15 @@ pub enum ProjectUsecaseError {
     #[error("Failed to list projects: {reason}")]
     ListProjectsFailed { reason: String },
 
+    #[error("Failed to check container status for project '{project_name}': {reason}")]
+    ContainerStatusCheckFailed {
+        project_name: String,
+        reason: String,
+    },
+
+    #[error("Failed to process project files: {reason}")]
+    ProjectFileProcessingFailed { reason: String },
+
     #[error("Invalid path: {reason}")]
     InvalidPath { reason: String },
 
@@ -34,6 +43,12 @@ impl ProjectUsecaseError {
         match self {
             ProjectUsecaseError::CreateProjectFailed { .. } => ErrorCode::PROJECT_CREATE_FAILED,
             ProjectUsecaseError::ListProjectsFailed { .. } => ErrorCode::PROJECT_LIST_FAILED,
+            ProjectUsecaseError::ContainerStatusCheckFailed { .. } => {
+                ErrorCode::COMPOSE_LIST_CONTAINERS_FAILED
+            }
+            ProjectUsecaseError::ProjectFileProcessingFailed { .. } => {
+                ErrorCode::PROJECT_FILE_PARSE_FAILED
+            }
             ProjectUsecaseError::InvalidPath { .. } => ErrorCode::PROJECT_INVALID_PATH,
             ProjectUsecaseError::ProjectNotFound { .. } => ErrorCode::PROJECT_NOT_FOUND,
             ProjectUsecaseError::ProjectFileReadFailed { .. } => {
