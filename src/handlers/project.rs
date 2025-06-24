@@ -1,4 +1,5 @@
 use axum::{extract::State, Json};
+use tracing::{error, instrument};
 
 use crate::errors::GfcError;
 use crate::models::project::{Project, ProjectFile};
@@ -6,6 +7,7 @@ use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 use crate::usecases::project::ProjectUsecase;
 
+#[instrument(skip(usecase), name = "get_projects")]
 pub async fn get_projects<C, G>(
     State(usecase): State<ProjectUsecase<C, G>>,
 ) -> Result<Json<Vec<Project>>, GfcError>
@@ -13,10 +15,16 @@ where
     C: ComposeClient + Send + Sync,
     G: GitClient + Send + Sync,
 {
-    let projects = usecase.list_projects()?;
-    Ok(Json(projects))
+    usecase
+        .list_projects()
+        .map_err(|e| {
+            error!("Project listing failed: {}", e);
+            e
+        })
+        .map(Json)
 }
 
+#[instrument(skip(usecase), name = "create_project")]
 pub async fn create_project<C, G>(
     State(usecase): State<ProjectUsecase<C, G>>,
     Json(project_file): Json<ProjectFile>,
@@ -25,6 +33,11 @@ where
     C: ComposeClient + Send + Sync,
     G: GitClient + Send + Sync,
 {
-    usecase.create_project(project_file)?;
-    Ok(axum::http::StatusCode::CREATED)
+    usecase
+        .create_project(project_file)
+        .map_err(|e| {
+            error!("Project creation failed: {}", e);
+            e
+        })
+        .map(|_| axum::http::StatusCode::CREATED)
 }
