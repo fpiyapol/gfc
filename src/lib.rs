@@ -3,12 +3,14 @@ pub mod errors;
 pub mod handlers;
 pub mod models;
 pub mod repositories;
+pub mod telemetry;
 pub mod usecases;
 
 use anyhow::Result;
 use axum::routing::{get, post};
 use axum::Router;
 use std::sync::Arc;
+use tracing::info;
 
 use crate::config::Config;
 use crate::handlers::project::{create_project, get_projects};
@@ -18,12 +20,14 @@ use crate::usecases::project::ProjectUsecase;
 
 pub async fn init() -> Result<()> {
     let config = load_config("config/default.yaml")?;
+    telemetry::init_telemetry()?;
+
     let project_usecase = create_project_usecase(&config)?;
     let app = build_app(project_usecase);
 
     let address = format!("{}:{}", config.server.host, config.server.port);
     let listener = tokio::net::TcpListener::bind(&address).await?;
-    println!("Server running at http://{}", address);
+    info!("Server running at http://{}", address);
 
     axum::serve(listener, app).await?;
     Ok(())

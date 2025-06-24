@@ -17,7 +17,7 @@ fn map_error(err: &GfcError) -> StatusCode {
         Config(_) => StatusCode::INTERNAL_SERVER_ERROR,
         Git(_) => StatusCode::BAD_GATEWAY,
         Compose(_) => StatusCode::BAD_GATEWAY,
-        Project(_) => StatusCode::UNPROCESSABLE_ENTITY,
+        Project(_) => StatusCode::INTERNAL_SERVER_ERROR,
         Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

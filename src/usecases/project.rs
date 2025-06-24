@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tracing::{debug, error, info, instrument};
 
 use crate::config::WorkspaceConfig;
 use crate::errors::project::ProjectUsecaseError;
@@ -41,8 +42,13 @@ where
         }
     }
 
+    #[instrument(skip(self), name = "project_usecase::create_project", fields(project.name = %project_file.name, git.url = %project_file.source.url, git.branch = %project_file.source.branch))]
     pub fn create_project(&self, project_file: ProjectFile) -> GfcResult<()> {
-        println!("Creating project: {}", project_file.name);
+        info!(
+            project.workspace_dir = %self.workspace_config.projects_dir,
+            repository.workspace_dir = %self.workspace_config.repositories_dir,
+            "Creating project with workspace setup"
+        );
 
         let git_client = Arc::clone(&self.git_client);
         let compose_client = Arc::clone(&self.compose_client);
@@ -66,22 +72,39 @@ where
         let project_name = project_file.name.clone();
         let compose_file_path = self.get_compose_file_path(&project_name, &git_source)?;
 
+        debug!(
+            project.path = %project_path.display(),
+            repository.path = %repository_path.display(),
+            compose.file = %compose_file_path,
+            "Starting async project setup"
+        );
+
         tokio::task::spawn_blocking(move || {
             let _ = git_client.clone_repository(&git_source, &repository_dir);
             let _ = compose_client.up(&compose_file_path);
-            println!("Project '{}' creation completed successfully", project_name);
         });
 
         Ok(())
     }
 
+    #[instrument(skip(self), name = "project_usecase::list_projects")]
     pub fn list_projects(&self) -> GfcResult<Vec<Project>> {
         let root_project_path = Path::new(&self.workspace_config.projects_dir);
+        debug!(
+            project.workspace_dir = %root_project_path.display(),
+            "Scanning workspace for project files"
+        );
+
         let project_files = find_all_project_files(root_project_path).map_err(|e| {
             ProjectUsecaseError::ListProjectsFailed {
                 reason: format!("Failed to find project files: {}", e),
             }
         })?;
+
+        debug!(
+            project.files_found = project_files.len(),
+            "Found project definition files"
+        );
 
         let projects = project_files
             .into_iter()
@@ -90,6 +113,12 @@ where
             .map_err(|e| ProjectUsecaseError::ListProjectsFailed {
                 reason: format!("Failed to process project files: {}", e),
             })?;
+
+        info!(
+            project.count = projects.len(),
+            project.workspace_dir = %self.workspace_config.projects_dir,
+            "Successfully listed all projects"
+        );
 
         Ok(projects)
     }
@@ -109,7 +138,7 @@ where
                     "Invalid path to compose file for project '{}': cannot convert path to string",
                     project_name
                 );
-                println!("Project operation failed: {}", error_msg);
+                error!(project.name = %project_name, compose.path = %compose_file_path.display(), error = %error_msg, "Project compose file path conversion failed");
                 ProjectUsecaseError::InvalidPath { reason: error_msg }.into()
             })
             .map(String::from)
@@ -131,11 +160,6 @@ where
             .git_client
             .get_last_commit_timestamp(&repository_dir)
             .map_err(|e| {
-                let error_msg = format!(
-                    "Failed to get last commit timestamp for project '{}': {}",
-                    name, e
-                );
-                println!("Project operation failed: {}", error_msg);
                 ProjectUsecaseError::ProjectNotFound {
                     project_name: name.clone(),
                     reason: format!("Git repository information unavailable: {}", e),
@@ -153,7 +177,7 @@ where
 
     fn container_status_for(&self, compose_file_path: &str) -> GfcResult<String> {
         // Extract project name from the path for better error messages
-        let project_name = Path::new(compose_file_path)
+        let _project_name = Path::new(compose_file_path)
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|name| name.to_str())
@@ -163,14 +187,6 @@ where
             .compose_client
             .list_containers(compose_file_path)
             .map_err(|e| {
-                let error_msg = format!(
-                    "Failed to list containers for project '{}' using compose file '{}': {}",
-                    project_name, compose_file_path, e
-                );
-                // Print technical message for logging
-                println!("Project operation failed: {}", error_msg);
-
-                // Return structured error with fields
                 ProjectUsecaseError::ListProjectsFailed {
                     reason: format!("Container listing failed: {}", e),
                 }
