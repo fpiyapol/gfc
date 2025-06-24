@@ -10,7 +10,7 @@ use crate::errors::project::ProjectUsecaseError;
 use crate::errors::GfcResult;
 use crate::models::docker_compose::{Container, ContainerState};
 use crate::models::git::GitSource;
-use crate::models::project::{Project, ProjectFile};
+use crate::models::project::{Project, ProjectFile, ProjectName, ProjectStatus};
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 
@@ -56,7 +56,7 @@ where
         let (project_path, project_file_path, repository_path) =
             get_project_and_repository_workspace_paths(&self.workspace_config, &project_file.name);
 
-        setup_project_workspace(
+        create_project_workspace_directories_and_definition_file(
             &project_file,
             &project_path,
             &project_file_path,
@@ -145,25 +145,26 @@ where
     }
 
     fn to_project(&self, project_file: &ProjectFile) -> GfcResult<Project> {
-        let name = project_file.name.clone();
+        let name = ProjectName::new(project_file.name.clone())
+            .map_err(|e| ProjectUsecaseError::InvalidPath { reason: e })?;
         let source = project_file.source.clone();
 
         // Get compose file path with proper error handling
-        let compose_file = self.get_compose_file_path(&name, &source)?;
+        let compose_file = self.get_compose_file_path(&project_file.name, &source)?;
 
         // Get container status with proper error handling
         let status = self.container_status_for(&compose_file)?;
 
         // Get git commit timestamp with proper error handling
-        let repository_dir = Path::new(&self.workspace_config.repositories_dir).join(&name);
+        let repository_dir =
+            Path::new(&self.workspace_config.repositories_dir).join(&project_file.name);
         let last_updated_at = self
             .git_client
             .get_last_commit_timestamp(&repository_dir)
             .map_err(|e| ProjectUsecaseError::ProjectNotFound {
-                project_name: name.clone(),
+                project_name: project_file.name.clone(),
                 reason: format!("Git repository information unavailable: {}", e),
-            })?
-            .to_string();
+            })?;
 
         Ok(Project {
             name,
@@ -173,7 +174,7 @@ where
         })
     }
 
-    fn container_status_for(&self, compose_file_path: &str) -> GfcResult<String> {
+    fn container_status_for(&self, compose_file_path: &str) -> GfcResult<ProjectStatus> {
         // Extract project name from the path for better error messages
         let project_name = Path::new(compose_file_path)
             .parent()
@@ -189,23 +190,26 @@ where
                 reason: e.to_string(),
             })?;
 
-        Ok(build_container_status_string(&containers))
+        Ok(determine_project_status_from_containers(&containers))
     }
 }
 
 /// Ensure all workspace directories exist and project definition file is written.
-fn setup_project_workspace(
+fn create_project_workspace_directories_and_definition_file(
     project_file: &ProjectFile,
     project_path: &Path,
     project_file_path: &Path,
     repository_path: &Path,
 ) -> std::io::Result<()> {
-    ensure_workspace_dirs(project_path, repository_path)?;
+    validate_and_create_required_directories(project_path, repository_path)?;
     write_project_definition_file(project_file, project_file_path)
 }
 
 /// Create workspace directories if they are missing.
-fn ensure_workspace_dirs(project_dir: &Path, repository_dir: &Path) -> std::io::Result<()> {
+fn validate_and_create_required_directories(
+    project_dir: &Path,
+    repository_dir: &Path,
+) -> std::io::Result<()> {
     fs::create_dir_all(project_dir)?;
     fs::create_dir_all(repository_dir)?;
     Ok(())
@@ -228,7 +232,7 @@ fn get_project_and_repository_workspace_paths(
 }
 
 fn find_all_project_files(workspace_root: &Path) -> std::io::Result<Vec<ProjectFile>> {
-    let paths = glob_project_file_paths(workspace_root)?;
+    let paths = discover_all_project_definition_file_paths(workspace_root)?;
 
     let contents: Vec<String> = paths
         .iter()
@@ -242,7 +246,7 @@ fn find_all_project_files(workspace_root: &Path) -> std::io::Result<Vec<ProjectF
 }
 
 /// Return all `*.yml` and `*.yaml` files under the projects workspace.
-fn glob_project_file_paths(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn discover_all_project_definition_file_paths(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let patterns = ["**/*.yml", "**/*.yaml"];
     patterns
         .iter()
@@ -255,17 +259,14 @@ fn glob_project_file_paths(root: &Path) -> std::io::Result<Vec<PathBuf>> {
         .map_err(io::Error::other)
 }
 
-fn build_container_status_string(containers: &[Container]) -> String {
+fn determine_project_status_from_containers(containers: &[Container]) -> ProjectStatus {
     let total = containers.len();
     let running = containers
         .iter()
         .filter(|c| c.state == ContainerState::Running)
         .count();
 
-    match running {
-        0 => "Exited".to_string(),
-        _ => format!("Running ({}/{})", running, total),
-    }
+    ProjectStatus::from_container_counts(running, total)
 }
 
 #[cfg(test)]
@@ -274,9 +275,10 @@ mod tests {
     use std::path::Path;
     use tempfile::TempDir;
 
-    use super::{find_all_project_files, glob_project_file_paths};
+    use super::{discover_all_project_definition_file_paths, find_all_project_files};
     use crate::models::docker_compose::{Container, ContainerState};
-    use crate::usecases::project::build_container_status_string;
+    use crate::models::project::ProjectStatus;
+    use crate::usecases::project::determine_project_status_from_containers;
 
     fn make_container(name: &str, state: ContainerState) -> Container {
         Container {
@@ -292,52 +294,64 @@ mod tests {
     }
 
     #[test]
-    fn given_two_running_containers_when_build_container_status_string_then_return_running_two_out_of_two(
+    fn given_two_running_containers_when_determine_project_status_then_return_running_two_out_of_two(
     ) {
         let containers = vec![
             make_container("service1", ContainerState::Running),
             make_container("service2", ContainerState::Running),
         ];
 
-        let actual = build_container_status_string(&containers);
+        let actual = determine_project_status_from_containers(&containers);
 
-        assert_eq!(actual, "Running (2/2)");
+        assert_eq!(
+            actual,
+            ProjectStatus::Running {
+                active_containers: 2,
+                total_containers: 2
+            }
+        );
     }
 
     #[test]
-    fn given_one_running_and_one_exited_container_when_build_container_status_string_then_return_running_one_out_of_two(
+    fn given_one_running_and_one_exited_container_when_determine_project_status_then_return_partially_running(
     ) {
         let containers = vec![
             make_container("service1", ContainerState::Running),
             make_container("service2", ContainerState::Exited),
         ];
 
-        let actual = build_container_status_string(&containers);
+        let actual = determine_project_status_from_containers(&containers);
 
-        assert_eq!(actual, "Running (1/2)");
+        assert_eq!(
+            actual,
+            ProjectStatus::PartiallyRunning {
+                active_containers: 1,
+                total_containers: 2
+            }
+        );
     }
 
     #[test]
-    fn given_all_exited_containers_when_build_container_status_string_then_return_exited() {
+    fn given_all_exited_containers_when_determine_project_status_then_return_stopped() {
         let containers = vec![
             make_container("service1", ContainerState::Exited),
             make_container("service2", ContainerState::Exited),
         ];
 
-        let actual = build_container_status_string(&containers);
+        let actual = determine_project_status_from_containers(&containers);
 
-        assert_eq!(actual, "Exited");
+        assert_eq!(actual, ProjectStatus::Stopped);
     }
 
     #[test]
-    fn given_empty_container_list_when_build_container_status_string_then_return_exited() {
+    fn given_empty_container_list_when_determine_project_status_then_return_unknown() {
         let containers: Vec<Container> = vec![];
-        let actual = build_container_status_string(&containers);
-        assert_eq!(actual, "Exited");
+        let actual = determine_project_status_from_containers(&containers);
+        assert_eq!(actual, ProjectStatus::Unknown);
     }
 
     #[test]
-    fn given_three_mixed_containers_when_build_container_status_string_then_return_running_two_out_of_three(
+    fn given_three_mixed_containers_when_determine_project_status_then_return_partially_running_two_out_of_three(
     ) {
         let containers = vec![
             make_container("service1", ContainerState::Running),
@@ -345,9 +359,15 @@ mod tests {
             make_container("service3", ContainerState::Running),
         ];
 
-        let actual = build_container_status_string(&containers);
+        let actual = determine_project_status_from_containers(&containers);
 
-        assert_eq!(actual, "Running (2/3)");
+        assert_eq!(
+            actual,
+            ProjectStatus::PartiallyRunning {
+                active_containers: 2,
+                total_containers: 3
+            }
+        );
     }
 
     #[test]
@@ -356,7 +376,7 @@ mod tests {
         write_yaml(tmp.path(), "a.yml", "name: a\nsource:\n  url: https://example.com/a.git\n  branch: main\n  path: docker-compose.yml\n")?;
         write_yaml(tmp.path(), "b.yaml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n")?;
 
-        let paths = glob_project_file_paths(tmp.path())?;
+        let paths = discover_all_project_definition_file_paths(tmp.path())?;
 
         assert_eq!(paths.len(), 2);
         Ok(())
