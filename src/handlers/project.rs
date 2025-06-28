@@ -17,10 +17,7 @@ where
 {
     usecase
         .list_projects()
-        .map_err(|e| {
-            error!("Project listing failed: {}", e);
-            e
-        })
+        .inspect_err(|e| error!("Project listing failed: {}", e))
         .map(Json)
 }
 
@@ -35,9 +32,6 @@ where
 {
     usecase
         .create_project(project_file)
-        .map_err(|e| {
-            error!("Project creation failed: {}", e);
-            e
-        })
+        .inspect_err(|e| error!("Project creation failed: {}", e))
         .map(|_| axum::http::StatusCode::CREATED)
 }
