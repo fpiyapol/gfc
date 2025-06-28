@@ -29,8 +29,8 @@ pub struct ServerConfig {
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
 pub struct WorkspaceConfig {
-    pub projects_dir: String,
-    pub repositories_dir: String,
+    pub manifests_root: String,
+    pub repositories_root: String,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -90,8 +90,8 @@ mod tests {
             host: 127.0.0.1
             port: 8080
         workspace:
-            projects_dir: /tmp/projects
-            repositories_dir: /tmp/repos
+            manifests_root: /tmp/projects
+            repositories_root: /tmp/repos
         "#;
         let mut tmpfile = NamedTempFile::new().unwrap();
         write!(tmpfile, "{}", yaml).unwrap();
@@ -102,8 +102,8 @@ mod tests {
         let config = config.unwrap();
         assert_eq!(config.server.host, "127.0.0.1");
         assert_eq!(config.server.port, 8080);
-        assert_eq!(config.workspace.projects_dir, "/tmp/projects");
-        assert_eq!(config.workspace.repositories_dir, "/tmp/repos");
+        assert_eq!(config.workspace.manifests_root, "/tmp/projects");
+        assert_eq!(config.workspace.repositories_root, "/tmp/repos");
     }
 
     #[test]

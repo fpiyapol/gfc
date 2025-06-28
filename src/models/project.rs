@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::models::git::GitSource;
 
@@ -121,4 +122,13 @@ pub struct Project {
     pub source: GitSource,
     pub status: ProjectStatus,
     pub last_updated_at: DateTime<Utc>,
+}
+
+/// Represents the calculated file system locations for a project
+#[derive(Debug, Clone)]
+pub struct ProjectFileLocations {
+    pub manifest_file: PathBuf,
+    pub manifest_folder: PathBuf,
+    pub repository_folder: PathBuf,
+    pub compose_file: String,
 }

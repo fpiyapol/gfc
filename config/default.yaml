@@ -3,8 +3,8 @@ server:
   port: 3080
 
 workspace:
-  projects_dir: resources/projects # where project files are stored
-  repositories_dir: resources/repositories # where repositories are cloned
+  manifests_root: resources/projects # where project files are stored
+  repositories_root: resources/repositories # where repositories are cloned
 
 telemetry:
   enabled: true

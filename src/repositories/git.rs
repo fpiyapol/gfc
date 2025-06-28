@@ -7,6 +7,7 @@ use tracing::{debug, instrument};
 use crate::errors::git::GitError;
 use crate::models::git::GitSource;
 
+#[cfg_attr(test, mockall::automock)]
 pub trait GitClient {
     fn clone_repository(&self, source: &GitSource, working_dir: &Path) -> Result<(), GitError>;
     fn pull_repository(&self, source: &GitSource, working_dir: &Path) -> Result<(), GitError>;

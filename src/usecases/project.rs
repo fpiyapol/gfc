@@ -3,14 +3,15 @@ use std::fs;
 use std::io::{self};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::config::WorkspaceConfig;
 use crate::errors::project::ProjectUsecaseError;
 use crate::errors::GfcResult;
 use crate::models::docker_compose::{Container, ContainerState};
-use crate::models::git::GitSource;
-use crate::models::project::{Project, ProjectFile, ProjectName, ProjectStatus};
+use crate::models::project::{
+    Project, ProjectFile, ProjectFileLocations, ProjectName, ProjectStatus,
+};
 use crate::repositories::compose_client::ComposeClient;
 use crate::repositories::git::GitClient;
 
@@ -44,44 +45,46 @@ where
 
     #[instrument(skip(self), name = "project_usecase::create_project", fields(project.name = %project_file.name, git.url = %project_file.source.url, git.branch = %project_file.source.branch))]
     pub fn create_project(&self, project_file: ProjectFile) -> GfcResult<()> {
-        info!(
-            project.workspace_dir = %self.workspace_config.projects_dir,
-            repository.workspace_dir = %self.workspace_config.repositories_dir,
-            "Creating project with workspace setup"
-        );
+        validate_create_project_params(&project_file)?;
+
+        let project_file_locations = self.get_project_file_locations(&project_file)?;
+
+        validate_and_create_required_directories(
+            &project_file_locations.manifest_folder,
+            &project_file_locations.repository_folder,
+        )
+        .map_err(|e| ProjectUsecaseError::CreateProjectFailed {
+            project_name: project_file_locations
+                .manifest_folder
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string(),
+            reason: e.to_string(),
+        })?;
+
+        write_project_definition_file(&project_file, &project_file_locations.manifest_file)
+            .map_err(|e| ProjectUsecaseError::CreateProjectFailed {
+                project_name: project_file.name.clone(),
+                reason: e.to_string(),
+            })?;
 
         let git_client = Arc::clone(&self.git_client);
         let compose_client = Arc::clone(&self.compose_client);
 
-        let (project_path, project_file_path, repository_path) =
-            get_project_and_repository_workspace_paths(&self.workspace_config, &project_file.name);
-
-        create_project_workspace_directories_and_definition_file(
-            &project_file,
-            &project_path,
-            &project_file_path,
-            &repository_path,
-        )
-        .map_err(|e| ProjectUsecaseError::CreateProjectFailed {
-            project_name: project_file.name.clone(),
-            reason: e.to_string(),
-        })?;
-
-        let git_source = project_file.source.clone();
-        let repository_dir = repository_path.clone();
-        let project_name = project_file.name.clone();
-        let compose_file_path = self.get_compose_file_path(&project_name, &git_source)?;
-
         debug!(
-            project.path = %project_path.display(),
-            repository.path = %repository_path.display(),
-            compose.file = %compose_file_path,
+            project.path = %project_file_locations.manifest_folder.display(),
+            repository.path = %project_file_locations.repository_folder.display(),
+            compose.file = %project_file_locations.compose_file,
             "Starting async project setup"
         );
 
         tokio::task::spawn_blocking(move || {
-            let _ = git_client.clone_repository(&git_source, &repository_dir);
-            let _ = compose_client.up(&compose_file_path);
+            let _ = git_client.clone_repository(
+                &project_file.source,
+                &project_file_locations.repository_folder,
+            );
+            let _ = compose_client.up(&project_file_locations.compose_file);
         });
 
         Ok(())
@@ -89,93 +92,100 @@ where
 
     #[instrument(skip(self), name = "project_usecase::list_projects")]
     pub fn list_projects(&self) -> GfcResult<Vec<Project>> {
-        let root_project_path = Path::new(&self.workspace_config.projects_dir);
-        debug!(
-            project.workspace_dir = %root_project_path.display(),
-            "Scanning workspace for project files"
-        );
+        let project_workspace = Path::new(&self.workspace_config.manifests_root);
 
-        let project_files = find_all_project_files(root_project_path).map_err(|e| {
-            ProjectUsecaseError::ListProjectsFailed {
-                reason: e.to_string(),
-            }
-        })?;
-
-        debug!(
-            project.files_found = project_files.len(),
-            "Found project definition files"
-        );
-
-        let projects = project_files
-            .into_iter()
-            .map(|project_file| self.to_project(&project_file))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| ProjectUsecaseError::ProjectFileProcessingFailed {
-                reason: e.to_string(),
-            })?;
-
-        info!(
-            project.count = projects.len(),
-            project.workspace_dir = %self.workspace_config.projects_dir,
-            "Successfully listed all projects"
-        );
-
-        Ok(projects)
+        discover_all_project_files_in(project_workspace)
+            .and_then(|project_files| self.build_projects_from(project_files))
     }
 
-    fn get_compose_file_path(
+    fn get_project_file_locations(
         &self,
-        project_name: &str,
-        git_source: &GitSource,
-    ) -> GfcResult<String> {
-        let repository_dir = Path::new(&self.workspace_config.repositories_dir).join(project_name);
-        let compose_file_path = repository_dir.join(&git_source.path);
+        project_file: &ProjectFile,
+    ) -> GfcResult<ProjectFileLocations> {
+        let project_name = &project_file.name;
+        let project_dir = Path::new(&self.workspace_config.manifests_root).join(project_name);
+        let project_file_path = project_dir.join("project.yaml");
+        let repository_dir = Path::new(&self.workspace_config.repositories_root).join(project_name);
 
-        compose_file_path
+        let compose_file_path = repository_dir
+            .join(&project_file.source.path)
             .to_str()
-            .ok_or_else(|| {
-                let error_msg = format!(
-                    "Invalid path to compose file for project '{}': cannot convert path to string",
+            .ok_or_else(|| ProjectUsecaseError::InvalidPath {
+                reason: format!(
+                    "Invalid compose file path for project '{}': cannot convert path to string",
                     project_name
-                );
-                error!(project.name = %project_name, compose.path = %compose_file_path.display(), error = %error_msg, "Project compose file path conversion failed");
-                ProjectUsecaseError::InvalidPath { reason: error_msg }.into()
-            })
-            .map(String::from)
-    }
+                ),
+            })?
+            .to_string();
 
-    fn to_project(&self, project_file: &ProjectFile) -> GfcResult<Project> {
-        let name = ProjectName::new(project_file.name.clone())
-            .map_err(|e| ProjectUsecaseError::InvalidPath { reason: e })?;
-        let source = project_file.source.clone();
-
-        // Get compose file path with proper error handling
-        let compose_file = self.get_compose_file_path(&project_file.name, &source)?;
-
-        // Get container status with proper error handling
-        let status = self.container_status_for(&compose_file)?;
-
-        // Get git commit timestamp with proper error handling
-        let repository_dir =
-            Path::new(&self.workspace_config.repositories_dir).join(&project_file.name);
-        let last_updated_at = self
-            .git_client
-            .get_last_commit_timestamp(&repository_dir)
-            .map_err(|e| ProjectUsecaseError::ProjectNotFound {
-                project_name: project_file.name.clone(),
-                reason: format!("Git repository information unavailable: {}", e),
-            })?;
-
-        Ok(Project {
-            name,
-            source,
-            status,
-            last_updated_at,
+        Ok(ProjectFileLocations {
+            manifest_file: project_file_path,
+            manifest_folder: project_dir,
+            repository_folder: repository_dir,
+            compose_file: compose_file_path,
         })
     }
 
+    fn build_projects_from(&self, project_files: Vec<ProjectFile>) -> GfcResult<Vec<Project>> {
+        project_files
+            .into_iter()
+            .map(|project_file| self.build_project_from(project_file))
+            .collect::<Result<Vec<_>, _>>()
+            .inspect(|projects| {
+                info!(
+                    project.count = projects.len(),
+                    project.workspace_dir = %self.workspace_config.manifests_root,
+                    "Successfully enriched all projects with runtime status"
+                );
+            })
+    }
+
+    fn build_project_from(&self, project_file: ProjectFile) -> GfcResult<Project> {
+        let project_name = project_file.name.clone();
+
+        self.determine_current_project_status(&project_file)
+            .and_then(|status| {
+                self.get_last_repository_update_timestamp(&project_file)
+                    .map(|last_updated| (status, last_updated))
+            })
+            .and_then(|(status, last_updated_at)| {
+                ProjectName::new(project_name)
+                    .map_err(|e| ProjectUsecaseError::InvalidPath { reason: e }.into())
+                    .map(|name| Project {
+                        name,
+                        source: project_file.source,
+                        status,
+                        last_updated_at,
+                    })
+            })
+    }
+
+    fn determine_current_project_status(
+        &self,
+        project_file: &ProjectFile,
+    ) -> GfcResult<ProjectStatus> {
+        let project_file_locations = self.get_project_file_locations(project_file)?;
+        self.container_status_for(&project_file_locations.compose_file)
+    }
+
+    fn get_last_repository_update_timestamp(
+        &self,
+        project_file: &ProjectFile,
+    ) -> GfcResult<chrono::DateTime<chrono::Utc>> {
+        let repository_folder =
+            Path::new(&self.workspace_config.repositories_root).join(&project_file.name);
+        self.git_client
+            .get_last_commit_timestamp(&repository_folder)
+            .map_err(|e| {
+                ProjectUsecaseError::ProjectNotFound {
+                    project_name: project_file.name.clone(),
+                    reason: format!("Git repository information unavailable: {}", e),
+                }
+                .into()
+            })
+    }
+
     fn container_status_for(&self, compose_file_path: &str) -> GfcResult<ProjectStatus> {
-        // Extract project name from the path for better error messages
         let project_name = Path::new(compose_file_path)
             .parent()
             .and_then(|p| p.file_name())
@@ -190,22 +200,37 @@ where
                 reason: e.to_string(),
             })?;
 
-        Ok(determine_project_status_from_containers(&containers))
+        Ok(determine_project_status_from(&containers))
     }
 }
 
-/// Ensure all workspace directories exist and project definition file is written.
-fn create_project_workspace_directories_and_definition_file(
-    project_file: &ProjectFile,
-    project_path: &Path,
-    project_file_path: &Path,
-    repository_path: &Path,
-) -> std::io::Result<()> {
-    validate_and_create_required_directories(project_path, repository_path)?;
-    write_project_definition_file(project_file, project_file_path)
+fn validate_create_project_params(project_file: &ProjectFile) -> GfcResult<()> {
+    ProjectName::new(project_file.name.clone()).map_err(|e| {
+        ProjectUsecaseError::CreateProjectFailed {
+            project_name: project_file.name.clone(),
+            reason: e,
+        }
+    })?;
+
+    if project_file.source.url.trim().is_empty() {
+        return Err(ProjectUsecaseError::CreateProjectFailed {
+            project_name: project_file.name.clone(),
+            reason: "Git URL cannot be empty".to_string(),
+        }
+        .into());
+    }
+
+    if project_file.source.branch.trim().is_empty() {
+        return Err(ProjectUsecaseError::CreateProjectFailed {
+            project_name: project_file.name.clone(),
+            reason: "Git branch cannot be empty".to_string(),
+        }
+        .into());
+    }
+
+    Ok(())
 }
 
-/// Create workspace directories if they are missing.
 fn validate_and_create_required_directories(
     project_dir: &Path,
     repository_dir: &Path,
@@ -215,24 +240,34 @@ fn validate_and_create_required_directories(
     Ok(())
 }
 
-/// Serialise the `project.yaml` file beside the project directory.
 fn write_project_definition_file(project: &ProjectFile, dest: &Path) -> std::io::Result<()> {
     let yaml = serde_yaml::to_string(project).map_err(io::Error::other)?;
     fs::write(dest, yaml)
 }
 
-fn get_project_and_repository_workspace_paths(
-    workspace_config: &WorkspaceConfig,
-    project_name: &str,
-) -> (PathBuf, PathBuf, PathBuf) {
-    let project_path = Path::new(&workspace_config.projects_dir).join(project_name);
-    let project_file_path = project_path.join("project.yaml");
-    let repository_path = Path::new(&workspace_config.repositories_dir).join(project_name);
-    (project_path, project_file_path, repository_path)
+fn discover_all_project_files_in(workspace_root: &Path) -> GfcResult<Vec<ProjectFile>> {
+    debug!(
+        project.workspace_dir = %workspace_root.display(),
+        "Scanning workspace for project files"
+    );
+
+    find_all_project_files_in(workspace_root)
+        .map_err(|e| {
+            ProjectUsecaseError::ListProjectsFailed {
+                reason: e.to_string(),
+            }
+            .into()
+        })
+        .inspect(|files| {
+            debug!(
+                project.files_found = files.len(),
+                "Found project definition files"
+            );
+        })
 }
 
-fn find_all_project_files(workspace_root: &Path) -> std::io::Result<Vec<ProjectFile>> {
-    let paths = discover_all_project_definition_file_paths(workspace_root)?;
+fn find_all_project_files_in(workspace_root: &Path) -> std::io::Result<Vec<ProjectFile>> {
+    let paths = find_all_file_paths_in(workspace_root)?;
 
     let contents: Vec<String> = paths
         .iter()
@@ -245,8 +280,7 @@ fn find_all_project_files(workspace_root: &Path) -> std::io::Result<Vec<ProjectF
         .collect()
 }
 
-/// Return all `*.yml` and `*.yaml` files under the projects workspace.
-fn discover_all_project_definition_file_paths(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn find_all_file_paths_in(root: &Path) -> std::io::Result<Vec<PathBuf>> {
     let patterns = ["**/*.yml", "**/*.yaml"];
     patterns
         .iter()
@@ -259,7 +293,7 @@ fn discover_all_project_definition_file_paths(root: &Path) -> std::io::Result<Ve
         .map_err(io::Error::other)
 }
 
-fn determine_project_status_from_containers(containers: &[Container]) -> ProjectStatus {
+fn determine_project_status_from(containers: &[Container]) -> ProjectStatus {
     let total = containers.len();
     let running = containers
         .iter()
@@ -273,12 +307,15 @@ fn determine_project_status_from_containers(containers: &[Container]) -> Project
 mod tests {
     use std::fs::{self, File};
     use std::path::Path;
+    use std::sync::Arc;
     use tempfile::TempDir;
 
-    use super::{discover_all_project_definition_file_paths, find_all_project_files};
+    use crate::config::WorkspaceConfig;
     use crate::models::docker_compose::{Container, ContainerState};
-    use crate::models::project::ProjectStatus;
-    use crate::usecases::project::determine_project_status_from_containers;
+    use crate::models::git::GitSource;
+    use crate::models::project::{ProjectFile, ProjectStatus};
+    use crate::repositories::{compose_client::MockComposeClient, git::MockGitClient};
+    use crate::usecases::project::*;
 
     fn make_container(name: &str, state: ContainerState) -> Container {
         Container {
@@ -293,6 +330,17 @@ mod tests {
         fs::write(path, yaml)
     }
 
+    fn create_mock_usecase() -> ProjectUsecase<MockComposeClient, MockGitClient> {
+        ProjectUsecase::new(
+            Arc::new(MockComposeClient::new()),
+            Arc::new(MockGitClient::new()),
+            WorkspaceConfig {
+                manifests_root: "/workspace/projects".to_string(),
+                repositories_root: "/workspace/repos".to_string(),
+            },
+        )
+    }
+
     #[test]
     fn given_two_running_containers_when_determine_project_status_then_return_running_two_out_of_two(
     ) {
@@ -301,7 +349,7 @@ mod tests {
             make_container("service2", ContainerState::Running),
         ];
 
-        let actual = determine_project_status_from_containers(&containers);
+        let actual = determine_project_status_from(&containers);
 
         assert_eq!(
             actual,
@@ -320,7 +368,7 @@ mod tests {
             make_container("service2", ContainerState::Exited),
         ];
 
-        let actual = determine_project_status_from_containers(&containers);
+        let actual = determine_project_status_from(&containers);
 
         assert_eq!(
             actual,
@@ -338,7 +386,7 @@ mod tests {
             make_container("service2", ContainerState::Exited),
         ];
 
-        let actual = determine_project_status_from_containers(&containers);
+        let actual = determine_project_status_from(&containers);
 
         assert_eq!(actual, ProjectStatus::Stopped);
     }
@@ -346,7 +394,7 @@ mod tests {
     #[test]
     fn given_empty_container_list_when_determine_project_status_then_return_unknown() {
         let containers: Vec<Container> = vec![];
-        let actual = determine_project_status_from_containers(&containers);
+        let actual = determine_project_status_from(&containers);
         assert_eq!(actual, ProjectStatus::Unknown);
     }
 
@@ -359,7 +407,7 @@ mod tests {
             make_container("service3", ContainerState::Running),
         ];
 
-        let actual = determine_project_status_from_containers(&containers);
+        let actual = determine_project_status_from(&containers);
 
         assert_eq!(
             actual,
@@ -371,12 +419,12 @@ mod tests {
     }
 
     #[test]
-    fn given_two_project_files_when_glob_then_return_two_paths() -> anyhow::Result<()> {
+    fn given_two_project_files_when_discovering_then_return_two_paths() -> anyhow::Result<()> {
         let tmp = TempDir::new()?;
         write_yaml(tmp.path(), "a.yml", "name: a\nsource:\n  url: https://example.com/a.git\n  branch: main\n  path: docker-compose.yml\n")?;
-        write_yaml(tmp.path(), "b.yaml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n")?;
+        write_yaml(tmp.path(), "b.yml", "name: b\nsource:\n  url: https://example.com/b.git\n  branch: main\n  path: docker-compose.yml\n")?;
 
-        let paths = discover_all_project_definition_file_paths(tmp.path())?;
+        let paths = find_all_file_paths_in(tmp.path())?;
 
         assert_eq!(paths.len(), 2);
         Ok(())
@@ -391,7 +439,7 @@ mod tests {
             "---\nname: foo\nsource:\n  url: https://example.com/foo.git\n  branch: main\n  path: docker-compose.yml\n",
         )?;
 
-        let projects = find_all_project_files(tmp.path())?;
+        let projects = find_all_project_files_in(tmp.path())?;
 
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].name, "foo");
@@ -403,9 +451,100 @@ mod tests {
         let tmp = TempDir::new()?;
         write_yaml(tmp.path(), "bad.yml", "this: is: not: yaml")?;
 
-        let result = find_all_project_files(tmp.path());
+        let result = find_all_project_files_in(tmp.path());
 
         assert!(result.is_err());
         Ok(())
+    }
+
+    #[test]
+    fn given_standard_project_file_when_getting_locations_then_return_correct_paths() {
+        let usecase = create_mock_usecase();
+        let project_file = ProjectFile {
+            name: "test-project".to_string(),
+            source: GitSource {
+                url: "https://github.com/example/repo.git".to_string(),
+                branch: "main".to_string(),
+                path: "docker-compose.yml".to_string(),
+            },
+        };
+        let result = usecase.get_project_file_locations(&project_file).unwrap();
+
+        assert_eq!(
+            result.manifest_folder.to_str().unwrap(),
+            "/workspace/projects/test-project"
+        );
+        assert_eq!(
+            result.manifest_file.to_str().unwrap(),
+            "/workspace/projects/test-project/project.yaml"
+        );
+        assert_eq!(
+            result.repository_folder.to_str().unwrap(),
+            "/workspace/repos/test-project"
+        );
+        assert_eq!(
+            result.compose_file,
+            "/workspace/repos/test-project/docker-compose.yml"
+        );
+    }
+
+    #[test]
+    fn given_project_with_custom_compose_path_when_getting_locations_then_return_correct_custom_paths(
+    ) {
+        let usecase = create_mock_usecase();
+        let project_file = ProjectFile {
+            name: "custom-project".to_string(),
+            source: GitSource {
+                url: "https://github.com/example/repo.git".to_string(),
+                branch: "main".to_string(),
+                path: "deploy/compose.yaml".to_string(),
+            },
+        };
+        let result = usecase.get_project_file_locations(&project_file).unwrap();
+
+        assert_eq!(
+            result.manifest_folder.to_str().unwrap(),
+            "/workspace/projects/custom-project"
+        );
+        assert_eq!(
+            result.manifest_file.to_str().unwrap(),
+            "/workspace/projects/custom-project/project.yaml"
+        );
+        assert_eq!(
+            result.repository_folder.to_str().unwrap(),
+            "/workspace/repos/custom-project"
+        );
+        assert_eq!(
+            result.compose_file,
+            "/workspace/repos/custom-project/deploy/compose.yaml"
+        );
+    }
+
+    #[test]
+    fn given_valid_project_params_when_validating_then_return_success() {
+        let project_file = ProjectFile {
+            name: "valid-project".to_string(),
+            source: GitSource {
+                url: "https://github.com/example/repo.git".to_string(),
+                branch: "main".to_string(),
+                path: "docker-compose.yml".to_string(),
+            },
+        };
+
+        assert!(validate_create_project_params(&project_file).is_ok());
+    }
+
+    #[test]
+    fn given_empty_git_url_when_validating_project_params_then_return_error() {
+        let project_file = ProjectFile {
+            name: "test-project".to_string(),
+            source: GitSource {
+                url: "".to_string(),
+                branch: "main".to_string(),
+                path: "docker-compose.yml".to_string(),
+            },
+        };
+
+        assert!(validate_create_project_params(&project_file).is_err());
     }
 }
